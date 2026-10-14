@@ -95,6 +95,8 @@ export function loadConfig(env = process.env) {
       store: oneOf('AUTH_STORE', 'file', ['file', 'mongo']),
       dir: str('AUTH_DIR', './data/auth'),
       pairingPhoneNumber: pairing || null,
+      // Optional: also write the QR as a PNG (useful in Docker/headless hosts with no visible terminal).
+      qrImagePath: str('QR_IMAGE_PATH') || null,
     },
     privacy: {
       encryptionKey,

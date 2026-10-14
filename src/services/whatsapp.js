@@ -1,4 +1,6 @@
-import qrcode from 'qrcode-terminal';
+import qrcodeTerminal from 'qrcode-terminal';
+import qrcode from 'qrcode';
+import { writeFile } from 'node:fs/promises';
 import { normalizeJid } from '../utils/jid.js';
 import { BoundedSet } from '../utils/lru.js';
 
@@ -171,8 +173,17 @@ export class WhatsAppClient {
       }
       return;
     }
-    this.logger.info('scan the QR code printed below with WhatsApp > Linked devices (the code is not written to logs)');
-    qrcode.generate(qr, { small: true }, (art) => this.output.write(`\n${art}\n`));
+    this.logger.info('scan the QR code with WhatsApp > Linked devices (the code is not written to logs)');
+    qrcodeTerminal.generate(qr, { small: true }, (art) => this.output.write(`\n${art}\n`));
+    const imagePath = this.config.auth.qrImagePath;
+    if (imagePath) {
+      try {
+        await qrcode.toFile(imagePath, qr, { width: 512, margin: 2 });
+        this.logger.info({ path: imagePath }, 'QR code also written as an image (not logged: path only)');
+      } catch (err) {
+        this.onError(err, { scope: 'qr-image' });
+      }
+    }
   }
 
   async #handleLogout() {

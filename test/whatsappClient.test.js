@@ -177,3 +177,18 @@ test('stop() prevents any further reconnects', async () => {
   await t.fb.sock?.ev.emitAsync?.('connection.update', close(408));
   assert.equal(t.timers.pending.length, 0);
 });
+
+test('QR_IMAGE_PATH writes a scannable PNG alongside the terminal art', async () => {
+  const { mkdtemp, readFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const dir = await mkdtemp(path.join(tmpdir(), 'qr-test-'));
+  const imagePath = path.join(dir, 'qr.png');
+  const t = setup({ QR_IMAGE_PATH: imagePath });
+  await t.client.start();
+  await t.fb.sock.ev.emitAsync('connection.update', { qr: 'test-qr-payload' });
+  const png = await readFile(imagePath);
+  assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'valid PNG signature');
+  assert.ok(!JSON.stringify(t.logs).includes('test-qr-payload'), 'raw QR payload never logged, only the path');
+  await rm(dir, { recursive: true, force: true });
+});
