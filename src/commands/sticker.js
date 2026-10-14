@@ -1,18 +1,22 @@
 import { UserError } from '../utils/errors.js';
 import { formatBytes } from '../utils/text.js';
+import { describeMessage } from '../utils/message.js';
 import { canStickerKind, makeSticker, addStickerMetadata } from '../services/sticker.js';
 
 export default {
   name: 'sticker',
   aliases: ['s', 'stiker'],
   category: 'General',
-  description: 'Turn a replied-to image, GIF/video or sticker into a sticker',
-  usage: 'sticker (reply to a photo, GIF/video or sticker)',
-  details: 'Reply to the media with {p}sticker. Video/GIF clips are capped at 10 seconds. View-once media is refused, same as {p}save.',
+  description: 'Turn a photo, GIF/video or sticker into a sticker',
+  usage: 'sticker (reply to media, or send/caption media with {p}sticker)',
+  details: 'Either reply to the media with {p}sticker, or send the photo/video itself with {p}sticker as its caption. Video/GIF clips are capped at 10 seconds. View-once media is refused, same as {p}save.',
   async execute(ctx) {
     const { client, config, settings } = ctx.deps;
-    const q = ctx.quoted;
-    if (!q) throw new UserError(`Reply to a photo, GIF/video or sticker, then send ${ctx.prefix}sticker.`);
+    // Accept either a reply to media, or the command's own message carrying the media (caption = command).
+    const q = ctx.quoted ?? { info: describeMessage(ctx.msg.message) };
+    if (!q.info.hasMedia) {
+      throw new UserError(`Reply to a photo, GIF/video or sticker, or send one with the caption "${ctx.prefix}sticker", then try again.`);
+    }
     if (q.info.viewOnce) throw new UserError('View-once messages cannot be turned into a sticker. This bot honours WhatsApp\'s view-once protection.');
     if (!canStickerKind(q.info.kind)) throw new UserError('Only images, GIFs/videos and existing stickers can be turned into a sticker.');
     if (q.info.size && q.info.size > config.media.maxBytes) {
@@ -21,7 +25,9 @@ export default {
 
     let buffer;
     try {
-      buffer = await client.downloadMedia({ key: { remoteJid: ctx.chatJid, id: q.id, participant: q.participant ?? undefined, fromMe: false }, message: q.message });
+      buffer = ctx.quoted
+        ? await client.downloadMedia({ key: { remoteJid: ctx.chatJid, id: q.id, participant: q.participant ?? undefined, fromMe: false }, message: q.message })
+        : await client.downloadMedia(ctx.msg);
     } catch (err) {
       ctx.log.warn({ err: err.message }, 'media download failed');
       throw new UserError('I could not download that media. It may have expired; ask for it to be sent again.');

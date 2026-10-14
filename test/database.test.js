@@ -111,9 +111,9 @@ test('items: deleteAllForUser and exportAll', async () => {
   assert.equal(await repos.items.count(jid), 0);
 });
 
-test('chats: archive mode defaults to off, validates, caches and invalidates', async () => {
+test('chats: archive mode is unset (null) until explicitly configured, validates, caches and invalidates', async () => {
   const chat = '120363111@g.us';
-  assert.equal(await repos.chats.archiveMode(chat), 'off');
+  assert.equal(await repos.chats.archiveMode(chat), null);
   await repos.chats.setArchive(chat, { mode: 'full', enabledBy: U, isGroup: true });
   assert.equal(await repos.chats.archiveMode(chat), 'full');
   assert.equal((await repos.chats.get(chat)).archive.notifyJid, chat);
@@ -177,4 +177,18 @@ test('mongo auth state: creds and keys survive a reload and are encrypted at res
   assert.equal((await b.state.keys.get('pre-key', ['1']))['1'], null);
   await b.clear();
   assert.equal(await database.db.collection('auth_a').countDocuments(), 0);
+});
+
+test('chats: archiveMode returns null until configured; isExplicitlyConfigured distinguishes "never set" from "set"', async () => {
+  const chat = '120363222@g.us';
+  assert.equal(await repos.chats.archiveMode(chat), null);
+  assert.equal(await repos.chats.isExplicitlyConfigured(chat), false);
+
+  await repos.chats.setArchive(chat, { mode: 'media', enabledBy: null, notifyJid: U, isGroup: true });
+  assert.equal(await repos.chats.isExplicitlyConfigured(chat), true);
+  assert.equal(await repos.chats.archiveMode(chat), 'media');
+
+  await repos.chats.setArchive(chat, { mode: 'off' });
+  assert.equal(await repos.chats.archiveMode(chat), 'off', 'an explicit off is itself an explicit value, not a fallback');
+  assert.equal(await repos.chats.isExplicitlyConfigured(chat), true);
 });

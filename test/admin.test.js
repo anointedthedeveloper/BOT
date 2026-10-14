@@ -225,3 +225,50 @@ test('welcome message is sent to every configured owner', async () => {
   assert.equal(h.sock.texts(OWNER_JID).length, 1);
   assert.equal(h.sock.texts('15559990000@s.whatsapp.net').length, 1);
 });
+
+test('/delete: owner-only, toggles the live default for every chat without touching per-chat settings', async () => {
+  const h = await boot();
+  await h.say(ALICE, '/delete on');
+  assert.match(h.lastText(ALICE), /not allowed/);
+
+  await h.say(OWNER_JID, '/delete status');
+  assert.match(h.lastText(OWNER_JID), /default: \*off\*/);
+
+  await h.say(OWNER_JID, '/delete on');
+  assert.match(h.lastText(OWNER_JID), /✅.*\(media\) is now ON for every chat/);
+  assert.equal(h.deps.settings.defaultArchiveMode, 'media');
+
+  // takes effect immediately, live, without a restart
+  const msg = await h.say(ALICE, 'caught by the live default', { group: true });
+  assert.match(h.sock.texts(GROUP).at(-1), /archiving is now \*ON \(media\)\*/);
+  await h.revoke(GROUP, msg.key.id, { participant: ALICE });
+  assert.match(h.sock.texts(GROUP).at(-1), /caught by the live default/);
+
+  await h.say(OWNER_JID, '/delete off');
+  assert.match(h.lastText(OWNER_JID), /default is OFF/);
+  assert.equal(h.deps.settings.defaultArchiveMode, 'off');
+
+  // an explicitly-configured chat is untouched by the global toggle either way
+  await h.say(OWNER_JID, '/privacy archive meta', { group: true });
+  await h.say(OWNER_JID, '/delete on');
+  assert.equal(await h.deps.chats.archiveMode(GROUP), 'meta', 'explicit setting still wins over the new default');
+});
+
+test('/delete: on is refused when the operator disabled both content and media logging', async () => {
+  const h = await boot({ env: { ALLOW_CONTENT_LOGGING: 'false', ALLOW_MEDIA_CACHING: 'false' } });
+  await h.say(OWNER_JID, '/delete on');
+  assert.match(h.lastText(OWNER_JID), /nothing this can turn on/);
+});
+
+test('/delete: on falls back to full (text only) when media caching is operator-disabled', async () => {
+  const h = await boot({ env: { ALLOW_MEDIA_CACHING: 'false' } });
+  await h.say(OWNER_JID, '/delete on');
+  assert.match(h.lastText(OWNER_JID), /\(full\) is now ON/);
+  assert.equal(h.deps.settings.defaultArchiveMode, 'full');
+});
+
+test('/delete: unknown argument is rejected', async () => {
+  const h = await boot();
+  await h.say(OWNER_JID, '/delete bogus');
+  assert.match(h.lastText(OWNER_JID), /Usage:/);
+});

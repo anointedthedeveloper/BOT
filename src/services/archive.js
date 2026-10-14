@@ -20,27 +20,47 @@ export function canConfigureArchive({ isOwner, isGroup, senderCandidates, chatJi
  * View-once content and media bytes are never stored.
  */
 export class ArchiveService {
-  constructor({ config, repos, logger, client, mediaStore }) {
+  constructor({ config, repos, logger, client, mediaStore, settings }) {
     this.client = client;
     this.mediaStore = mediaStore;
     this.config = config;
     this.repos = repos;
     this.logger = logger;
+    this.settings = settings;
   }
 
   async record({ msg, chatJids, senderJid }) {
     // The same chat can be addressed by phone-number JID or LID: honour whichever form was configured.
     let chatJid = null;
     let mode = 'off';
+    let explicit = true;
     for (const candidate of chatJids) {
-      mode = await this.repos.chats.archiveMode(candidate);
-      if (mode !== 'off') {
+      const raw = await this.repos.chats.archiveMode(candidate);
+      const effective = raw ?? this.settings.defaultArchiveMode; // the live, runtime-toggleable default (see /delete)
+      if (effective !== 'off') {
         chatJid = candidate;
+        mode = effective;
+        explicit = raw !== null;
         break;
       }
     }
     if (!chatJid) return { stored: false, reason: 'chat-not-archived' };
     const chatAlt = chatJids.find((j) => j !== chatJid) ?? null;
+
+    // First message in a chat that is archiving only because of the live default (DEFAULT_ARCHIVE_MODE
+    // or /delete on), not an explicit per-chat setting: persist an explicit record (so this only
+    // happens once) and post the same visible notice a manual /privacy archive command would —
+    // nothing here is ever silent to the chat. Deletions in such a chat are shown back IN the same
+    // chat (not routed to a third party), since nobody but that chat's own members ever see it.
+    if (!explicit) {
+      const isGroup = isGroupJid(chatJid);
+      await this.repos.chats.setArchive(chatJid, { mode, enabledBy: null, notifyJid: chatJid, isGroup });
+      try {
+        await this.client.sendText(chatJid, `${this.noticeFor(mode, this.config.privacy.cacheTtlHours)}\n\n_(turned on automatically — deleted messages will be shown back here, in this chat)_`);
+      } catch (err) {
+        this.logger.warn({ err: err.message }, 'failed to post default-archiving notice');
+      }
+    }
 
     const info = describeMessage(msg.message);
     if (['protocol', 'reaction'].includes(info.kind)) return { stored: false, reason: 'not-a-message' };
@@ -120,7 +140,7 @@ export class ArchiveService {
     }[mode];
     return [
       `📦 Message archiving is now *ON (${mode})* for this chat.`,
-      `The bot keeps ${what} of messages it receives here for ${ttlHours}h, solely to show them to the person who enabled it if they get deleted.`,
+      `The bot keeps ${what} of messages it receives here for ${ttlHours}h, solely to recover a deleted message's content.`,
       'View-once content is never stored.',
       'Anyone can opt out of capture with the "logging off" option of the privacy command, or turn the chat off with "archive off".',
     ].join('\n');

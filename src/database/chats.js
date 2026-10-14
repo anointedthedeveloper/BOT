@@ -21,9 +21,18 @@ export class ChatsRepository {
     return doc;
   }
 
-  /** Active archive mode for a chat: 'off' | 'meta' | 'full'. */
+  /**
+   * The chat's EXPLICITLY configured archive mode, or null if it has never been set (meaning
+   * the live default — RuntimeSettings#defaultArchiveMode — applies; callers resolve that, since
+   * it can change at runtime without touching every chat's own record).
+   */
   async archiveMode(chatJid) {
-    return (await this.get(chatJid))?.archive?.mode ?? 'off';
+    return (await this.get(chatJid))?.archive?.mode ?? null;
+  }
+
+  /** True once someone (or the default-activation flow) has written an explicit archive setting for this chat. */
+  async isExplicitlyConfigured(chatJid) {
+    return Boolean((await this.get(chatJid))?.archive);
   }
 
   async setArchive(chatJid, { mode, enabledBy, notifyJid, isGroup }) {

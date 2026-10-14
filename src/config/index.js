@@ -77,6 +77,16 @@ export function loadConfig(env = process.env) {
     problems.push('PAIRING_PHONE_NUMBER is not a valid phone number');
   }
 
+  const allowContentLogging = bool('ALLOW_CONTENT_LOGGING', true);
+  const allowMediaCaching = bool('ALLOW_MEDIA_CACHING', true);
+  // Archive mode new/unconfigured chats start in. Still off by default: this is a deliberate,
+  // deployment-wide opt-in by the operator, not something a single command flips silently. A chat
+  // still gets the same visible "archiving is ON" notice the first time it applies to it, and
+  // anyone can still turn their own chat off with /privacy archive off.
+  const defaultArchiveMode = oneOf('DEFAULT_ARCHIVE_MODE', 'off', ['off', 'meta', 'full', 'media']);
+  if (defaultArchiveMode === 'full' && !allowContentLogging) problems.push('DEFAULT_ARCHIVE_MODE=full requires ALLOW_CONTENT_LOGGING=true (or use meta/off)');
+  if (defaultArchiveMode === 'media' && !allowMediaCaching) problems.push('DEFAULT_ARCHIVE_MODE=media requires ALLOW_MEDIA_CACHING=true (or use meta/full/off)');
+
   const config = {
     version: pkg.version,
     env: str('NODE_ENV', 'production'),
@@ -103,8 +113,9 @@ export function loadConfig(env = process.env) {
     },
     privacy: {
       encryptionKey,
-      allowContentLogging: bool('ALLOW_CONTENT_LOGGING', true),
-      allowMediaCaching: bool('ALLOW_MEDIA_CACHING', true),
+      allowContentLogging,
+      allowMediaCaching,
+      defaultArchiveMode,
       cacheTtlHours: int('CACHE_TTL_HOURS', 24, 1, 168),
       defaultRetentionDays: int('DEFAULT_RETENTION_DAYS', 30, 0, 3650),
       maxRetentionDays: int('MAX_RETENTION_DAYS', 365, 1, 3650),

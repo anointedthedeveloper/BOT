@@ -23,10 +23,11 @@ Encryption at rest (AES-256-GCM, `DATA_ENCRYPTION_KEY`) covers item text/notes, 
 ## Consent model
 
 - **Default: nothing is archived.**
-- Group chats: only the owner can enable archiving; the bot posts a notice listing what is kept and for how long. The owner is responsible for having the group's agreement.
+- Group chats: only the owner can enable archiving per chat (`/privacy archive`); the bot posts a notice listing what is kept and for how long. The owner is responsible for having the group's agreement.
 - Private chats: the person you are chatting with (via the bot's number) can enable it for their own chat; the owner can enable it for chats on the linked account — again with a visible notice.
-- Any participant can refuse text capture of their own messages with `/privacy logging off`, even in private mode.
-- `ALLOW_CONTENT_LOGGING=false` makes text capture impossible for the whole deployment.
+- The owner can also turn archiving on as a *standing default for every chat* (`/delete on`, or `DEFAULT_ARCHIVE_MODE` in `.env`) instead of per chat. This is a deliberate, deployment-wide decision the owner makes once — never silent: the same "archiving is ON" notice still fires the first time it applies to a given chat, and a chat explicitly turned off stays off regardless of the default. Deletions it catches are shown back **in the chat they happened in**, not routed to the owner privately — nobody outside that chat's own members ever sees anything through this feature that they weren't already party to.
+- Any participant can refuse text capture of their own messages with `/privacy logging off`, even in private mode, and that opt-out applies to the global default too.
+- `ALLOW_CONTENT_LOGGING=false` makes text capture impossible for the whole deployment; `ALLOW_MEDIA_CACHING=false` does the same for media.
 
 ## View-once and disappearing media
 

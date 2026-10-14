@@ -112,7 +112,7 @@ test('operator switch ALLOW_CONTENT_LOGGING=false blocks full mode and content c
   try {
     await h2.say(OWNER_JID, '/privacy archive full', { group: true });
     assert.match(h2.lastText(GROUP), /disabled by the operator/);
-    assert.equal(await h2.deps.chats.archiveMode(GROUP), 'off');
+    assert.equal(await h2.deps.chats.archiveMode(GROUP), null, 'the refused attempt never wrote anything');
     // even if the DB says "full", content is not captured
     await h2.deps.chats.setArchive(GROUP, { mode: 'full', enabledBy: OWNER_JID });
     const msg = await h2.say(ALICE, 'hello', { group: true });
@@ -224,7 +224,7 @@ test('strangers in private mode cannot enable archiving', async () => {
   try {
     await h2.say(ALICE, '/privacy archive full');
     assert.match(h2.lastText(ALICE), /Ask the bot owner/);
-    assert.equal(await h2.deps.chats.archiveMode(ALICE), 'off');
+    assert.equal(await h2.deps.chats.archiveMode(ALICE), null, 'the refused attempt never wrote anything');
     await h2.say(OWNER_JID, `/admin allow ${ALICE.split('@')[0]}`);
     await h2.say(ALICE, '/privacy archive full');
     assert.equal(await h2.deps.chats.archiveMode(ALICE), 'full');
@@ -344,7 +344,7 @@ test('operator switch ALLOW_MEDIA_CACHING=false blocks media mode', async () => 
   try {
     await h2.say(OWNER_JID, '/privacy archive media', { group: true });
     assert.match(h2.lastText(GROUP), /Media caching is disabled by the operator/);
-    assert.equal(await h2.deps.chats.archiveMode(GROUP), 'off');
+    assert.equal(await h2.deps.chats.archiveMode(GROUP), null, 'the refused attempt never wrote anything');
   } finally {
     await h2.stop();
   }
@@ -362,4 +362,62 @@ test('a failed media download is recorded as metadata with a reason', async () =
   } finally {
     await h2.stop();
   }
+});
+
+// ── DEFAULT_ARCHIVE_MODE (operator-wide default, still disclosed per chat) ─────────────────────
+test('DEFAULT_ARCHIVE_MODE: a group starts capturing automatically, with a one-time visible notice, and shows deletions back in the same chat', async () => {
+  const h2 = await startHarness({ env: { DEFAULT_ARCHIVE_MODE: 'full' } });
+  try {
+    assert.equal(await h2.deps.chats.archiveMode(GROUP), null, 'nothing explicit yet; the default applies live, not baked into the chat record');
+    assert.equal(h2.deps.settings.defaultArchiveMode, 'full');
+    const msg = await h2.say(ALICE, 'never ran any privacy command', { group: true });
+    const notice = h2.sock.texts(GROUP).at(-1);
+    assert.match(notice, /archiving is now \*ON \(full\)\*/);
+    assert.match(notice, /turned on automatically/);
+    assert.equal(await h2.deps.chats.archiveMode(GROUP), 'full', 'now persisted explicitly, so the notice fires only once');
+
+    h2.clearSent();
+    await h2.say(BOB, 'second message, no repeat notice', { group: true });
+    assert.equal(h2.sock.texts(GROUP).length, 0, 'the notice is posted only once per chat');
+
+    await h2.revoke(GROUP, msg.key.id, { participant: ALICE });
+    assert.match(h2.sock.texts(GROUP).at(-1), /never ran any privacy command/, 'shown back in the group, not DMed to anyone');
+    assert.equal(h2.sock.texts(OWNER_JID).length, 0, 'never routed to the owner privately');
+  } finally {
+    await h2.stop();
+  }
+});
+
+test('DEFAULT_ARCHIVE_MODE: a private chat also shows the deletion back in that same chat', async () => {
+  const h2 = await startHarness({ env: { DEFAULT_ARCHIVE_MODE: 'full' } });
+  try {
+    const msg = await h2.say(ALICE, 'my own message in my own dm');
+    assert.match(h2.sock.texts(ALICE).at(-1), /archiving is now \*ON \(full\)\*/);
+    h2.clearSent();
+    await h2.revoke(ALICE, msg.key.id, { participant: ALICE });
+    assert.match(h2.lastText(ALICE), /my own message in my own dm/);
+    assert.equal(h2.sock.texts(OWNER_JID).length, 0, 'not routed to the owner');
+  } finally {
+    await h2.stop();
+  }
+});
+
+test('DEFAULT_ARCHIVE_MODE: anyone can still explicitly turn their own chat off, overriding the default', async () => {
+  const h2 = await startHarness({ env: { DEFAULT_ARCHIVE_MODE: 'meta' } });
+  try {
+    await h2.say(ALICE, 'triggers the default');
+    await h2.say(ALICE, '/privacy archive off');
+    assert.equal(await h2.deps.chats.archiveMode(ALICE), 'off');
+    h2.clearSent();
+    const msg = await h2.say(ALICE, 'should not be captured anymore');
+    assert.equal(await h2.deps.messageCache.col.findOne({ msgId: msg.key.id }), null);
+  } finally {
+    await h2.stop();
+  }
+});
+
+test('DEFAULT_ARCHIVE_MODE=off (the actual default) behaves exactly as before: nothing happens automatically', async () => {
+  const msg = await h.say(ALICE, 'plain message, default mode is off in this harness');
+  assert.equal(await h.deps.messageCache.col.findOne({ msgId: msg.key.id }), null);
+  assert.equal(await h.deps.config.privacy.defaultArchiveMode, 'off');
 });

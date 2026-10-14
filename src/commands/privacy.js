@@ -18,18 +18,19 @@ export default {
   ].join('\n'),
   async execute(ctx) {
     const [sub, arg] = ctx.args.map((a) => a.toLowerCase());
-    const { users, items, chats, messageCache, mediaStore, archive, config } = ctx.deps;
+    const { users, items, chats, messageCache, mediaStore, archive, config, settings } = ctx.deps;
     const jid = ctx.sender.jid;
     const p = ctx.prefix;
     const chatKey = ctx.chatJids[0] ?? ctx.chatJid;
 
     if (!sub || sub === 'status') {
-      const mode = await chats.archiveMode(chatKey);
+      const explicitMode = await chats.archiveMode(chatKey);
+      const mode = explicitMode ?? settings.defaultArchiveMode;
       const counts = await Promise.all(['note', 'bookmark', 'saved'].map((t) => items.count(jid, t)));
       const prefs = ctx.user.prefs;
       return ctx.reply([
         '*Privacy status*',
-        `• This chat archive: *${mode}*${mode === 'off' ? ' (nothing is recorded here)' : ''}`,
+        `• This chat archive: *${mode}*${mode === 'off' ? ' (nothing is recorded here)' : explicitMode === null ? ' (via the bot\'s current default)' : ''}`,
         `• Capture of my message text in archived chats: *${prefs.contentLogging && config.privacy.allowContentLogging ? 'allowed' : 'refused'}*${config.privacy.allowContentLogging ? '' : ' (disabled by the operator)'}`,
         `• Retention of my saved items: *${prefs.retentionDays ? `${prefs.retentionDays} days` : 'until I delete them'}*`,
         `• Stored: ${counts[0]} notes, ${counts[1]} bookmarks, ${counts[2]} saved messages`,

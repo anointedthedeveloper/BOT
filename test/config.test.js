@@ -53,3 +53,12 @@ test('booleans and ranges are validated', () => {
   assert.throws(() => loadConfig({ ...ok, ALLOW_CONTENT_LOGGING: 'maybe' }), /ALLOW_CONTENT_LOGGING/);
   assert.throws(() => loadConfig({ ...ok, CACHE_TTL_HOURS: '9999' }), /CACHE_TTL_HOURS/);
 });
+
+test('DEFAULT_ARCHIVE_MODE: validated and cross-checked against the content/media kill switches', () => {
+  assert.equal(loadConfig(ok).privacy.defaultArchiveMode, 'off');
+  assert.equal(loadConfig({ ...ok, DEFAULT_ARCHIVE_MODE: 'media' }).privacy.defaultArchiveMode, 'media');
+  assert.throws(() => loadConfig({ ...ok, DEFAULT_ARCHIVE_MODE: 'nonsense' }), /DEFAULT_ARCHIVE_MODE/);
+  assert.throws(() => loadConfig({ ...ok, DEFAULT_ARCHIVE_MODE: 'full', ALLOW_CONTENT_LOGGING: 'false' }), /DEFAULT_ARCHIVE_MODE=full requires ALLOW_CONTENT_LOGGING/);
+  assert.throws(() => loadConfig({ ...ok, DEFAULT_ARCHIVE_MODE: 'media', ALLOW_MEDIA_CACHING: 'false' }), /DEFAULT_ARCHIVE_MODE=media requires ALLOW_MEDIA_CACHING/);
+  assert.equal(loadConfig({ ...ok, DEFAULT_ARCHIVE_MODE: 'meta', ALLOW_CONTENT_LOGGING: 'false', ALLOW_MEDIA_CACHING: 'false' }).privacy.defaultArchiveMode, 'meta');
+});

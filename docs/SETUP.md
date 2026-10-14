@@ -96,16 +96,23 @@ Set `AUTH_STORE=mongo` so the WhatsApp session is stored in MongoDB (encrypted w
 
 ## 7. Using the privacy features
 
+Two ways to turn on deleted-message recovery — same underlying system, different scope:
+
 ```
-/privacy archive meta     in a chat: remember sender/time/type of new messages (no text)
-/privacy archive full     … and the text, so deleted-message notices can show it
-/privacy archive media    … and photos/videos/stickers/audio/documents, re-sent if deleted
-/privacy archive off      stop and wipe that chat's cache
+/privacy archive meta     one chat: remember sender/time/type of new messages (no text)
+/privacy archive full     one chat: … and the text, so a deletion can show it
+/privacy archive media    one chat: … and photos/videos/stickers/audio/documents, re-sent if deleted
+/privacy archive off      one chat: stop and wipe that chat's cache
+
+/delete on                owner only: turn it on (media if allowed, else full) for EVERY chat at once
+/delete off               owner only: turn the above back off
+/delete status            show the current default
+
 /privacy logging off      refuse capture of YOUR text in archived chats
 /privacy retention 14     auto-delete your new saved items after 14 days
 ```
 
-Deleted-message notices go to whoever enabled archiving (owner's own chat for groups). Turn them off with `/settings set notifyDeletes off`.
+Either way, the first message captured in a chat posts the same visible "archiving is ON" notice right there — there is no silent option. A chat you explicitly turned off with `/privacy archive off` stays off even while `/delete on` is active globally. Deletions are shown back **in the chat they happened in**, never DMed to the owner or anyone else. `DEFAULT_ARCHIVE_MODE` in `.env` sets the same thing at deploy time instead of via `/delete`.
 
 ## 8. Operations
 
@@ -130,4 +137,4 @@ Deleted-message notices go to whoever enabled archiving (owner's own chat for gr
 | QR keeps refreshing | It expires in ~1 minute; scan quickly or use `PAIRING_PHONE_NUMBER`. |
 | `/readyz` returns 503 | WhatsApp not connected yet (status `qr`/`connecting`) or MongoDB unreachable; the body shows which. |
 | Repeated disconnects (408/428) | Unstable network or hosting. The client backs off (1s → 60s) and gives up after 20 consecutive failures so your supervisor can restart it. |
-| No deleted-message notice | Archiving must be on *before* the message was sent, the bot must have been online, and `notifyDeletes` must be on. Even then, only a "deletion detected" notice may be possible — that is by design. |
+| No deleted-message notice | The chat must be archiving (`/privacy archive …` or `/delete on`) *before* the message was sent, and the bot must have been online. `notifyDeletes` only matters for a chat someone enabled individually via `/privacy archive` (it has no effect on `/delete on`'s global default, since no single person "owns" that setting). Even with everything on, only a "deletion detected" notice may be possible for messages sent before archiving started — that is by design, not a bug. |

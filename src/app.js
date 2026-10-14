@@ -43,10 +43,10 @@ export async function createApp(config, { logger = createLogger(config), databas
     authProvider: createAuthProvider({ config, db: database.db, cipher, baileys }),
   });
 
-  const archive = new ArchiveService({ config, repos, logger, client, mediaStore });
+  const ownerJids = config.owners.map((o) => (o.includes('@') ? o : numberToJid(o)));
+  const archive = new ArchiveService({ config, repos, logger, client, mediaStore, settings });
   const deletions = new DeletionNotifier({ repos, client, logger, mediaStore, ttlHours: config.privacy.cacheTtlHours });
 
-  const ownerJids = config.owners.map((o) => (o.includes('@') ? o : numberToJid(o)));
   errorReporter.setNotifier((text) => Promise.all(ownerJids.map((j) => client.sendText(j, text))));
 
   let shuttingDown = false;

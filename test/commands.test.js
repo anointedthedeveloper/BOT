@@ -376,3 +376,32 @@ test('/sticker: an operational failure (ffmpeg missing) is reported as a bug wit
     await h2.stop();
   }
 });
+
+test('/sticker: works on a self-captioned image too, not only a reply', async () => {
+  const sharp = (await import('sharp')).default;
+  const png = await sharp({ create: { width: 200, height: 100, channels: 4, background: { r: 20, g: 20, b: 200, alpha: 1 } } }).png().toBuffer();
+  const h2 = await startHarness({ baileysOptions: { downloadResult: png } });
+  try {
+    await h2.say(ALICE, '', { raw: { imageMessage: { caption: '/sticker', mimetype: 'image/jpeg', fileLength: png.length, mediaKey: 'k' } } });
+    const sent = h2.sock.sent.findLast((s) => s.content.sticker);
+    assert.ok(sent, 'a sticker was produced from the self-captioned image, no reply needed');
+    assert.equal(sent.content.sticker.subarray(0, 4).toString(), 'RIFF');
+  } finally {
+    await h2.stop();
+  }
+});
+
+test('/sticker: a plain caption with no media and no reply still asks for one', async () => {
+  await h.say(ALICE, '/sticker');
+  assert.match(h.lastText(ALICE), /Reply to a photo.*or send one with the caption/);
+});
+
+test('/sticker: view-once as the message itself (not a reply) is still refused', async () => {
+  const h2 = await startHarness();
+  try {
+    await h2.say(ALICE, '', { raw: { viewOnceMessageV2: { message: { imageMessage: { caption: '/sticker', mediaKey: 'k' } } } } });
+    assert.equal(h2.sock.sent.length, 0, 'the whole message is a view-once container, never even parsed as a command');
+  } finally {
+    await h2.stop();
+  }
+});
