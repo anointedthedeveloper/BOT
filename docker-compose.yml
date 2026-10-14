@@ -1,0 +1,34 @@
+# Bot + MongoDB. Usage:  cp .env.example .env  (edit OWNER_NUMBERS etc.)  &&  docker compose up -d
+# First start: `docker compose logs -f bot` and scan the QR code (WhatsApp > Linked devices).
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Inside the compose network MongoDB is reachable as "mongo"; this overrides .env.
+      MONGODB_URI: mongodb://mongo:27017
+    depends_on:
+      mongo:
+        condition: service_healthy
+    volumes:
+      - bot-data:/data
+    # The health endpoint is intentionally NOT published to the host. Uncomment to expose it:
+    # ports: ["127.0.0.1:3000:3000"]
+    stop_grace_period: 15s
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    # No published ports: MongoDB is only reachable by the bot. Enable auth before exposing it.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+volumes:
+  bot-data:
+  mongo-data:

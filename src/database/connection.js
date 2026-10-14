@@ -1,0 +1,53 @@
+import { MongoClient } from 'mongodb';
+
+/**
+ * Connects to MongoDB and returns the handle used by every repository.
+ * `retries` covers the common "database container still starting" case.
+ */
+export async function connectDatabase({ uri, dbName }, logger, { retries = 5, delayMs = 2000 } = {}) {
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 8000, appName: 'whatsapp-utility-bot' });
+  let lastErr;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await client.connect();
+      const db = client.db(dbName);
+      await db.command({ ping: 1 });
+      logger?.info({ db: dbName }, 'mongodb connected');
+      return {
+        client,
+        db,
+        ping: async () => {
+          try {
+            await db.command({ ping: 1 });
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        close: () => client.close(),
+      };
+    } catch (err) {
+      lastErr = err;
+      logger?.warn({ attempt, retries, err: err.message }, 'mongodb connection failed');
+      if (attempt < retries) await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  await client.close().catch(() => {});
+  throw new Error(`Could not connect to MongoDB after ${retries} attempts: ${lastErr?.message}`);
+}
+
+export async function ensureIndexes(db) {
+  await Promise.all([
+    db.collection('items').createIndexes([
+      { key: { userJid: 1, seq: 1 }, unique: true },
+      { key: { userJid: 1, type: 1, createdAt: -1 } },
+      { key: { expiresAt: 1 }, sparse: true },
+    ]),
+    // Message cache is short-lived by design: MongoDB drops documents when expiresAt passes.
+    db.collection('message_cache').createIndexes([
+      { key: { chatJid: 1, msgId: 1 }, unique: true },
+      { key: { expiresAt: 1 }, expireAfterSeconds: 0 },
+    ]),
+    db.collection('users').createIndexes([{ key: { role: 1 } }, { key: { banned: 1 }, sparse: true }]),
+  ]);
+}
