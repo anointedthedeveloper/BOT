@@ -1,5 +1,6 @@
 export const PREFIX_PATTERN = /^[^\s\p{L}\p{N}]{1,3}$/u;
 const ARCHIVE_MODES = ['off', 'meta', 'full', 'media'];
+const ARCHIVE_TARGETS = ['inchat', 'dm'];
 
 /**
  * Runtime identity settings. Environment variables provide the defaults and the owner can
@@ -36,6 +37,23 @@ export class RuntimeSettings {
     if (mode === 'media' && !this.config.privacy.allowMediaCaching) throw new Error('Media caching is disabled by the operator (ALLOW_MEDIA_CACHING=false).');
     await this.repo.set({ defaultArchiveMode: mode });
     this.overrides.defaultArchiveMode = mode;
+  }
+
+  /**
+   * Where a DEFAULT-activated chat's deletion recovery is shown: 'inchat' (posted back in the
+   * chat it happened in — the default) or 'dm' (sent privately to the owner instead). Either way
+   * the chat still gets the same visible "archiving is ON" notice the first time it applies —
+   * this setting only changes where the *recovered content* ends up, never whether the chat is
+   * told archiving is happening.
+   */
+  get defaultArchiveTarget() {
+    return this.overrides.defaultArchiveTarget ?? 'inchat';
+  }
+
+  async setDefaultArchiveTarget(target) {
+    if (!ARCHIVE_TARGETS.includes(target)) throw new Error(`Target must be one of: ${ARCHIVE_TARGETS.join(', ')}`);
+    await this.repo.set({ defaultArchiveTarget: target });
+    this.overrides.defaultArchiveTarget = target;
   }
 
   async setPrefix(prefix) {

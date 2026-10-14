@@ -272,3 +272,37 @@ test('/delete: unknown argument is rejected', async () => {
   await h.say(OWNER_JID, '/delete bogus');
   assert.match(h.lastText(OWNER_JID), /Usage:/);
 });
+
+test('/delete on dm: deletions route privately to the owner, but the chat still gets the visible activation notice', async () => {
+  const h = await boot();
+  await h.say(OWNER_JID, '/delete on dm');
+  assert.match(h.lastText(OWNER_JID), /sent to you privately/);
+
+  const msg = await h.say(ALICE, 'caught by the live default, routed privately', { group: true });
+  const notice = h.sock.texts(GROUP).at(-1);
+  assert.match(notice, /archiving is now \*ON \(media\)\*/, 'the chat is still told archiving started');
+  assert.match(notice, /sent privately to the bot owner, not shown in this chat/);
+
+  h.clearSent();
+  await h.revoke(GROUP, msg.key.id, { participant: ALICE });
+  assert.equal(h.sock.texts(GROUP).length, 0, 'nothing posted back in the chat itself');
+  assert.match(h.lastText(OWNER_JID), /caught by the live default, routed privately/);
+});
+
+test('/delete on (no target) defaults to in-chat, and on dm then on (again) keeps the dm target', async () => {
+  const h = await boot();
+  await h.say(OWNER_JID, '/delete on');
+  assert.equal(h.deps.settings.defaultArchiveTarget, 'inchat');
+  await h.say(OWNER_JID, '/delete on dm');
+  assert.equal(h.deps.settings.defaultArchiveTarget, 'dm');
+  await h.say(OWNER_JID, '/delete on'); // no target given: leaves the existing dm target alone
+  assert.equal(h.deps.settings.defaultArchiveTarget, 'dm');
+  await h.say(OWNER_JID, '/delete status');
+  assert.match(h.lastText(OWNER_JID), /sent to you privately/);
+});
+
+test('/delete on bogus-target is rejected', async () => {
+  const h = await boot();
+  await h.say(OWNER_JID, '/delete on bogus');
+  assert.match(h.lastText(OWNER_JID), /Usage: \/delete on \[inchat\|dm\]/);
+});

@@ -105,6 +105,7 @@ Two ways to turn on deleted-message recovery — same underlying system, differe
 /privacy archive off      one chat: stop and wipe that chat's cache
 
 /delete on                owner only: turn it on (media if allowed, else full) for EVERY chat at once
+/delete on dm             same, but deletions are sent to you privately instead of posted in the chat
 /delete off               owner only: turn the above back off
 /delete status            show the current default
 
@@ -112,7 +113,7 @@ Two ways to turn on deleted-message recovery — same underlying system, differe
 /privacy retention 14     auto-delete your new saved items after 14 days
 ```
 
-Either way, the first message captured in a chat posts the same visible "archiving is ON" notice right there — there is no silent option. A chat you explicitly turned off with `/privacy archive off` stays off even while `/delete on` is active globally. Deletions are shown back **in the chat they happened in**, never DMed to the owner or anyone else. `DEFAULT_ARCHIVE_MODE` in `.env` sets the same thing at deploy time instead of via `/delete`.
+Either way, the first message captured in a chat posts the same visible "archiving is ON" notice right there — there is no silent option, regardless of `inchat`/`dm`. A chat you explicitly turned off with `/privacy archive off` stays off even while `/delete on` is active globally. By default deletions are shown back **in the chat they happened in**; `/delete on dm` routes them to the owner privately instead (the notice says which). `DEFAULT_ARCHIVE_MODE` in `.env` sets the mode at deploy time instead of via `/delete`.
 
 ## 8. Operations
 

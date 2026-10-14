@@ -20,13 +20,14 @@ export function canConfigureArchive({ isOwner, isGroup, senderCandidates, chatJi
  * View-once content and media bytes are never stored.
  */
 export class ArchiveService {
-  constructor({ config, repos, logger, client, mediaStore, settings }) {
+  constructor({ config, repos, logger, client, mediaStore, settings, ownerJid }) {
     this.client = client;
     this.mediaStore = mediaStore;
     this.config = config;
     this.repos = repos;
     this.logger = logger;
     this.settings = settings;
+    this.ownerJid = ownerJid ?? null; // used only when defaultArchiveTarget is 'dm'
   }
 
   async record({ msg, chatJids, senderJid }) {
@@ -50,13 +51,15 @@ export class ArchiveService {
     // First message in a chat that is archiving only because of the live default (DEFAULT_ARCHIVE_MODE
     // or /delete on), not an explicit per-chat setting: persist an explicit record (so this only
     // happens once) and post the same visible notice a manual /privacy archive command would —
-    // nothing here is ever silent to the chat. Deletions in such a chat are shown back IN the same
-    // chat (not routed to a third party), since nobody but that chat's own members ever see it.
+    // nothing here is ever silent to the chat, regardless of where recovered content ends up.
     if (!explicit) {
       const isGroup = isGroupJid(chatJid);
-      await this.repos.chats.setArchive(chatJid, { mode, enabledBy: null, notifyJid: chatJid, isGroup });
+      const toDm = this.settings.defaultArchiveTarget === 'dm' && this.ownerJid;
+      const notifyJid = toDm ? this.ownerJid : chatJid;
+      const where = toDm ? 'sent privately to the bot owner, not shown in this chat' : 'shown back here, in this chat';
+      await this.repos.chats.setArchive(chatJid, { mode, enabledBy: null, notifyJid, isGroup });
       try {
-        await this.client.sendText(chatJid, `${this.noticeFor(mode, this.config.privacy.cacheTtlHours)}\n\n_(turned on automatically — deleted messages will be shown back here, in this chat)_`);
+        await this.client.sendText(chatJid, `${this.noticeFor(mode, this.config.privacy.cacheTtlHours)}\n\n_(turned on automatically — deleted messages will be ${where})_`);
       } catch (err) {
         this.logger.warn({ err: err.message }, 'failed to post default-archiving notice');
       }

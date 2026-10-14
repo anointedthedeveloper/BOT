@@ -28,13 +28,13 @@ A privacy-first, modular WhatsApp utility bot built on [Baileys](https://github.
 A chat starts capturing messages in one of two ways — **there is no third, silent one**:
 
 - **Per chat, deliberately:** an authorised person runs `/privacy archive meta|full|media` in that chat. Only the owner can do this in groups; anyone else only in their own private chat with the bot.
-- **Everywhere, as a standing default:** the owner runs `/delete on` (or sets `DEFAULT_ARCHIVE_MODE` in `.env`). This applies to every chat — existing and new — without running a command in each one.
+- **Everywhere, as a standing default:** the owner runs `/delete on` (or sets `DEFAULT_ARCHIVE_MODE` in `.env`). This applies to every chat — existing and new — without running a command in each one. `/delete on dm` additionally routes the recovered content to the owner privately instead of posting it back in the chat (see below) — the activation notice still fires and says which.
 
-Either way, the **first message captured in a chat always triggers the same visible "archiving is ON" notice posted right there in that chat** — nobody's messages are ever captured without that chat seeing it happen. A chat explicitly turned off with `/privacy archive off` stays off even while the global default is on.
+Either way, the **first message captured in a chat always triggers the same visible "archiving is ON" notice posted right there in that chat** — nobody's messages are ever captured without that chat seeing it happen, and that notice is not affected by `inchat`/`dm`. A chat explicitly turned off with `/privacy archive off` stays off even while the global default is on.
 
 While a chat is archiving, each message the bot *receives* is cached for `CACHE_TTL_HOURS` (default 24h): sender, time and type (`meta`); plus the text (`full`); plus photos, videos, stickers, audio and documents up to `MAX_MEDIA_MB` (`media`, encrypted on disk when a key is set). Text and files are only kept if the sender has not opted out and the operator allows it (`ALLOW_CONTENT_LOGGING`, `ALLOW_MEDIA_CACHING`). View-once content is **never** stored, under any mode.
 
-When WhatsApp sends a revoke event for a message in an archiving chat, the bot posts exactly one of these **back into that same chat** (never DMed elsewhere, never to a third party who wasn't already in that chat):
+When WhatsApp sends a revoke event for a message in an archiving chat, the bot posts exactly one of these back — into that same chat by default, or to the owner privately for a chat covered by `/delete on dm`, never to anyone else:
 - 🗑️ **original content available** – text and/or the file was captured (the file is re-sent right after the notice);
 - 🗑️ **content not stored** – the message was seen, but only metadata was kept (and why: meta mode, sender opt-out, media, view-once…);
 - 🗑️ **original NOT available** – the bot has no record of it (sent before archiving, not received, or expired).
@@ -74,7 +74,7 @@ docker compose logs -f bot  # scan the QR code on first run
 | `/owner` | everyone | Owner contact (only what the operator configured) |
 | `/admin allow\|disallow\|ban\|unban\|list\|stats` | admins | User management |
 | `/admin promote\|demote\|prefix\|botname\|identity-reset` | owner | Role & identity management |
-| `/delete on\|off\|status` | owner | Deleted-message recovery as the *live default* for every chat (see below) |
+| `/delete on [inchat\|dm]\|off\|status` | owner | Deleted-message recovery as the *live default* for every chat (see below) |
 | `/restart` → `/restart confirm` | owner | Two-step restart |
 
 \* `/privacy` stays reachable even in private mode so anyone can opt out of text capture.

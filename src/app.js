@@ -44,7 +44,7 @@ export async function createApp(config, { logger = createLogger(config), databas
   });
 
   const ownerJids = config.owners.map((o) => (o.includes('@') ? o : numberToJid(o)));
-  const archive = new ArchiveService({ config, repos, logger, client, mediaStore, settings });
+  const archive = new ArchiveService({ config, repos, logger, client, mediaStore, settings, ownerJid: ownerJids[0] });
   const deletions = new DeletionNotifier({ repos, client, logger, mediaStore, ttlHours: config.privacy.cacheTtlHours });
 
   errorReporter.setNotifier((text) => Promise.all(ownerJids.map((j) => client.sendText(j, text))));
