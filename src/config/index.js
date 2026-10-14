@@ -87,6 +87,7 @@ export function loadConfig(env = process.env) {
       allowGroupCommands: bool('ALLOW_GROUP_COMMANDS', true),
       ownerName: str('OWNER_NAME'),
       ownerContact: str('OWNER_CONTACT'),
+      brandImagePath: str('BRAND_IMAGE_PATH') || null,
       restartMode: oneOf('RESTART_MODE', 'reconnect', ['reconnect', 'exit']),
     },
     owners,

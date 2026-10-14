@@ -7,7 +7,7 @@ import { splitArgs } from '../utils/text.js';
  * Returns null when the message is not a command. `deps` is the service container.
  */
 export function buildContext(msg, deps) {
-  const { settings, client, logger } = deps;
+  const { settings, client, logger, brandImage } = deps;
   const prefix = settings.prefix;
   const info = describeMessage(msg.message);
   if (info.viewOnce) return null; // never act on view-once content
@@ -38,7 +38,7 @@ export function buildContext(msg, deps) {
     role: 'none',
     user: null,
     command: null,
-    reply: (text) => client.sendText(chatJid, text, { quoted: msg }),
+    reply: (text) => client.sendBranded(chatJid, text, { quoted: msg, brand: brandImage }),
     react: (emoji) => client.react(chatJid, key, emoji),
   };
 }

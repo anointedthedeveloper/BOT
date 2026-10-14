@@ -1,8 +1,10 @@
 import qrcodeTerminal from 'qrcode-terminal';
 import qrcode from 'qrcode';
-import { writeFile } from 'node:fs/promises';
 import { normalizeJid } from '../utils/jid.js';
 import { BoundedSet } from '../utils/lru.js';
+import { BRAND_CAPTION_LIMIT } from './branding.js';
+
+export { BRAND_CAPTION_LIMIT };
 
 // Mirrors Baileys' DisconnectReason (kept local so decisions are testable without the library).
 export const DISCONNECT = Object.freeze({
@@ -279,6 +281,21 @@ export class WhatsAppClient {
       last = this.#track(await sock.sendMessage(jid, { text: part }, quoted ? { quoted } : undefined));
     }
     return last;
+  }
+
+  /**
+   * Sends text with an optional brand image attached (BRAND_IMAGE_PATH). Short replies become a
+   * single image+caption message; replies too long for a caption get the image, then the full
+   * text as normal (so formatting-heavy replies like /menu are never truncated).
+   */
+  async sendBranded(jid, text, { quoted, brand } = {}) {
+    if (!brand) return this.sendText(jid, text, { quoted });
+    const str = String(text);
+    if (str.length <= BRAND_CAPTION_LIMIT) {
+      return this.sendMedia(jid, { kind: 'image', buffer: brand.buffer, mimetype: brand.mimetype, caption: str }, { quoted });
+    }
+    await this.sendMedia(jid, { kind: 'image', buffer: brand.buffer, mimetype: brand.mimetype }, { quoted });
+    return this.sendText(jid, str);
   }
 
   async sendMedia(jid, { kind, buffer, mimetype, fileName, caption }, { quoted } = {}) {

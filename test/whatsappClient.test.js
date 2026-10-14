@@ -211,3 +211,26 @@ test('a new pairing (isNewLogin) is reported on the open event; a plain reconnec
   await t.fb.sock.ev.emitAsync('connection.update', { connection: 'open' });
   assert.deepEqual(opens, [true, false]);
 });
+
+test('sendBranded: short text becomes one image+caption message; long text sends image then full text', async () => {
+  const t = setup();
+  await t.client.start();
+  await t.fb.sock.ev.emitAsync('connection.update', { connection: 'open' });
+  const brand = { buffer: Buffer.from('PNGDATA'), mimetype: 'image/png' };
+
+  await t.client.sendBranded('1@s.whatsapp.net', 'short reply', { brand });
+  assert.equal(t.fb.sock.sent.length, 1);
+  assert.equal(t.fb.sock.sent[0].content.image.toString(), 'PNGDATA');
+  assert.equal(t.fb.sock.sent[0].content.caption, 'short reply');
+
+  t.fb.sock.sent.length = 0;
+  const long = 'x'.repeat(2000);
+  await t.client.sendBranded('1@s.whatsapp.net', long, { brand });
+  assert.ok(t.fb.sock.sent[0].content.image);
+  assert.equal(t.fb.sock.sent[0].content.caption, undefined);
+  assert.equal(t.fb.sock.sent.slice(1).map((s) => s.content.text).join(''), long);
+
+  t.fb.sock.sent.length = 0;
+  await t.client.sendBranded('1@s.whatsapp.net', 'no brand configured');
+  assert.equal(t.fb.sock.sent[0].content.text, 'no brand configured');
+});

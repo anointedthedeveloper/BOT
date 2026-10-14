@@ -105,6 +105,10 @@ Events → `events/` (no business logic) → `services/` (rules) → `database/`
 - Per-user rate limiting with escalation to a temporary mute. Replayed (stale) messages after a reconnect are ignored for command purposes.
 - Minimal collection: nothing is captured from a chat without an announced opt-in; cached messages auto-expire via a MongoDB TTL index; saved items expire per user retention; `/privacy purge` deletes everything about a user.
 
+## Branding
+
+Set `BRAND_IMAGE_PATH` to a local `.png`/`.jpg`/`.webp` file to attach it to every command reply. Short replies (≤1000 characters) become a single image+caption message; longer replies (e.g. `/menu`) get the image first, then the full text as a normal message, so nothing is ever truncated. Leave it unset for plain-text replies (the default). A missing or unreadable file logs a warning and falls back to plain text rather than failing startup.
+
 ## Development
 
 ```bash

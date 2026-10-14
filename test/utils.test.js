@@ -113,3 +113,20 @@ test('cipher: round trip, tamper detection, passthrough without key', () => {
   assert.throws(() => plain.decryptText(enc), /DATA_ENCRYPTION_KEY/);
   assert.equal(c.decryptText('legacy plain text'), 'legacy plain text');
 });
+
+test('loadBrandImage: reads a supported file, rejects bad extensions, degrades on missing file', async (t) => {
+  const { loadBrandImage } = await import('../src/services/branding.js');
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const dir = await mkdtemp(path.join(tmpdir(), 'brand-test-'));
+  const pngPath = path.join(dir, 'x.png');
+  await writeFile(pngPath, Buffer.from('fakepng'));
+  const img = await loadBrandImage(pngPath, null);
+  assert.deepEqual(img, { buffer: Buffer.from('fakepng'), mimetype: 'image/png' });
+
+  assert.equal(await loadBrandImage(null, null), null);
+  assert.equal(await loadBrandImage(path.join(dir, 'missing.png'), { warn() {} }), null);
+  assert.equal(await loadBrandImage(path.join(dir, 'x.gif'), { warn() {} }), null);
+  await rm(dir, { recursive: true, force: true });
+});

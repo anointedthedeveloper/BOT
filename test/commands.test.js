@@ -237,3 +237,34 @@ test('ackReactions reacts to successful commands when enabled', async () => {
   await say(BOB, '/ping');
   assert.ok(h.sock.sent.some((s) => s.content.react?.text === '✅'));
 });
+
+test('BRAND_IMAGE_PATH: command replies carry the configured image', async () => {
+  const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const dir = await mkdtemp(path.join(tmpdir(), 'brand-e2e-'));
+  const imgPath = path.join(dir, 'brand.png');
+  await writeFile(imgPath, Buffer.from('BRANDBYTES'));
+
+  const h2 = await startHarness({ env: { BRAND_IMAGE_PATH: imgPath } });
+  try {
+    await h2.say(ALICE, '/ping');
+    const sent = h2.sock.sent.at(-1);
+    assert.equal(sent.content.image.toString(), 'BRANDBYTES');
+    assert.match(sent.content.caption, /Pong/);
+  } finally {
+    await h2.stop();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('an unreadable BRAND_IMAGE_PATH degrades to plain text instead of failing startup', async () => {
+  const h2 = await startHarness({ env: { BRAND_IMAGE_PATH: '/no/such/file.png' } });
+  try {
+    await h2.say(ALICE, '/ping');
+    assert.match(h2.lastText(ALICE), /Pong/);
+    assert.equal(h2.sock.sent.at(-1).content.image, undefined);
+  } finally {
+    await h2.stop();
+  }
+});

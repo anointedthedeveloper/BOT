@@ -13,6 +13,7 @@ import { WhatsAppClient } from './services/whatsapp.js';
 import { createAuthProvider } from './services/authProvider.js';
 import { startRetentionJob } from './services/retention.js';
 import { createHealthServer } from './services/health.js';
+import { loadBrandImage } from './services/branding.js';
 import { CommandRegistry, CommandRouter } from './commands/index.js';
 import { registerEvents } from './events/index.js';
 
@@ -34,6 +35,7 @@ export async function createApp(config, { logger = createLogger(config), databas
   const permissions = new PermissionService({ config, users: repos.users });
   const mediaStore = new MediaStore({ dir: config.media.dir, cipher, logger });
   const registry = await CommandRegistry.load();
+  const brandImage = await loadBrandImage(config.bot.brandImagePath, logger);
 
   baileys ??= await import('@whiskeysockets/baileys');
   const client = new WhatsAppClient({
@@ -70,7 +72,7 @@ export async function createApp(config, { logger = createLogger(config), databas
 
   const deps = {
     config, logger, db: database, cipher, ...repos, settings, errorReporter, limiter, permissions,
-    mediaStore, registry, client, archive, deletions, requestRestart, pendingRestarts: new Map(), ownerJids,
+    mediaStore, registry, client, archive, deletions, requestRestart, pendingRestarts: new Map(), ownerJids, brandImage,
   };
   deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config });
   registerEvents(deps);
