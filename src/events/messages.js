@@ -10,7 +10,7 @@ const MAX_COMMAND_AGE_S = 120;
  * Only live ("notify") messages are processed; history syncs and our own echoes are ignored.
  */
 export function createMessageHandler(deps) {
-  const { client, archive, router, errorReporter } = deps;
+  const { client, archive, viewOnce, router, errorReporter } = deps;
 
   return async function onUpsert({ messages, type }) {
     if (type !== 'notify') return;
@@ -27,6 +27,12 @@ export function createMessageHandler(deps) {
           await archive.record({ msg, chatJids, senderJid: sender.jid });
         } catch (err) {
           errorReporter.report(err, { scope: 'archive.record' });
+        }
+
+        try {
+          await viewOnce.handle(msg);
+        } catch (err) {
+          errorReporter.report(err, { scope: 'viewonce.handle' });
         }
 
         const ts = Number(msg.messageTimestamp?.toString?.() ?? msg.messageTimestamp ?? 0);

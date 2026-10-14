@@ -9,6 +9,7 @@ import { ErrorReporter } from './services/errorReporter.js';
 import { MediaStore } from './services/mediaStore.js';
 import { ArchiveService } from './services/archive.js';
 import { DeletionNotifier } from './services/deletions.js';
+import { ViewOnceService } from './services/viewonce.js';
 import { WhatsAppClient } from './services/whatsapp.js';
 import { createAuthProvider } from './services/authProvider.js';
 import { startRetentionJob } from './services/retention.js';
@@ -46,6 +47,7 @@ export async function createApp(config, { logger = createLogger(config), databas
   const ownerJids = config.owners.map((o) => (o.includes('@') ? o : numberToJid(o)));
   const archive = new ArchiveService({ config, repos, logger, client, mediaStore, settings });
   const deletions = new DeletionNotifier({ repos, client, logger, mediaStore, ttlHours: config.privacy.cacheTtlHours, ownerJid: ownerJids[0] });
+  const viewOnce = new ViewOnceService({ client, logger, ownerJid: ownerJids[0] });
 
   errorReporter.setNotifier((text) => Promise.all(ownerJids.map((j) => client.sendText(j, text))));
 
@@ -66,7 +68,7 @@ export async function createApp(config, { logger = createLogger(config), databas
 
   const deps = {
     config, logger, db: database, cipher, ...repos, settings, errorReporter, limiter, permissions,
-    mediaStore, registry, client, archive, deletions, ownerJids, brandImage,
+    mediaStore, registry, client, archive, deletions, viewOnce, ownerJids, brandImage,
   };
   deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config });
   registerEvents(deps);

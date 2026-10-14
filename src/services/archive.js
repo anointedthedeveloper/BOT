@@ -33,11 +33,6 @@ export class ArchiveService {
     const alreadyMonitored = (await Promise.all(chatJids.map((j) => this.repos.chats.isMonitored(j)))).some(Boolean);
     if (!alreadyMonitored) {
       await this.repos.chats.markMonitored(chatJid, { isGroup: isGroupJid(chatJid) });
-      try {
-        await this.client.sendText(chatJid, this.noticeFor(mode, this.config.privacy.cacheTtlHours));
-      } catch (err) {
-        this.logger.warn({ err: err.message }, 'failed to post monitoring-activation notice');
-      }
     }
 
     const info = describeMessage(msg.message);
