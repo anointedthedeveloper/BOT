@@ -282,6 +282,31 @@ test('/sticker: converts a replied-to image into a real sticker', async () => {
     const meta = await sharp(sent.content.sticker).metadata();
     assert.equal(meta.width, 512);
     assert.equal(meta.height, 512);
+
+    const webpmux = (await import('node-webpmux')).default;
+    const img = new webpmux.Image();
+    await img.load(sent.content.sticker);
+    const exif = JSON.parse(img.exif.subarray(22).toString('utf-8'));
+    assert.equal(exif['sticker-pack-name'], 'UtilityBot', 'defaults to the bot name');
+  } finally {
+    await h2.stop();
+  }
+});
+
+test('/sticker: pack name/author follow STICKER_PACK_NAME and STICKER_PACK_AUTHOR', async () => {
+  const sharp = (await import('sharp')).default;
+  const png = await sharp({ create: { width: 80, height: 80, channels: 4, background: { r: 5, g: 5, b: 5, alpha: 1 } } }).png().toBuffer();
+  const h2 = await startHarness({ baileysOptions: { downloadResult: png }, env: { STICKER_PACK_NAME: '50 Shades of BLACK', STICKER_PACK_AUTHOR: 'Sin Of Pride' } });
+  try {
+    const quoted = { id: 'Q-PACK', message: { imageMessage: { mimetype: 'image/jpeg', fileLength: png.length, mediaKey: 'k' } } };
+    await h2.say(ALICE, '/sticker', { quoted });
+    const sent = h2.sock.sent.findLast((s) => s.content.sticker);
+    const webpmux = (await import('node-webpmux')).default;
+    const img = new webpmux.Image();
+    await img.load(sent.content.sticker);
+    const exif = JSON.parse(img.exif.subarray(22).toString('utf-8'));
+    assert.equal(exif['sticker-pack-name'], '50 Shades of BLACK');
+    assert.equal(exif['sticker-pack-publisher'], 'Sin Of Pride');
   } finally {
     await h2.stop();
   }

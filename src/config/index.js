@@ -88,6 +88,8 @@ export function loadConfig(env = process.env) {
       ownerName: str('OWNER_NAME'),
       ownerContact: str('OWNER_CONTACT'),
       brandImagePath: str('BRAND_IMAGE_PATH') || null,
+      stickerPackName: str('STICKER_PACK_NAME') || null,
+      stickerPackAuthor: str('STICKER_PACK_AUTHOR') || null,
       restartMode: oneOf('RESTART_MODE', 'reconnect', ['reconnect', 'exit']),
     },
     owners,

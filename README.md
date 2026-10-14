@@ -109,6 +109,7 @@ Events → `events/` (no business logic) → `services/` (rules) → `database/`
 ## Stickers
 
 Reply to a photo, GIF/video or existing sticker with `/sticker` to convert it into a WhatsApp sticker. Images are padded to a square transparent WebP; video/GIF clips (capped at 10 seconds) become an animated WebP via `ffmpeg`. Requires the `ffmpeg` binary (included in the Docker image) and the `sharp` package (installed automatically). View-once media is refused, same as `/save`.
+The pack name and author shown under the sticker come from `STICKER_PACK_NAME`/`STICKER_PACK_AUTHOR` (default to the bot name); embedding them never fails the command if it doesn't work.
 
 ## Branding
 

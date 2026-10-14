@@ -1,9 +1,13 @@
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
+import webpmux from 'node-webpmux';
 import { UserError } from '../utils/errors.js';
+
+const { Image } = webpmux;
 
 const STATIC_KINDS = new Set(['image']);
 const ANIMATED_KINDS = new Set(['video']);
@@ -56,6 +60,27 @@ async function stickerFromVideo(buffer, { ffmpegPath = 'ffmpeg' } = {}) {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Embeds WhatsApp's sticker EXIF metadata (pack/"collection" name, author/"brand", emoji tags)
+ * into a WebP. WhatsApp clients read this to show the pack name and publisher under the sticker.
+ */
+export async function addStickerMetadata(webp, { packName = '', author = '', emojis = ['✨'] } = {}) {
+  if (!packName && !author) return webp;
+  const img = new Image();
+  await img.load(webp);
+  const payload = Buffer.from(JSON.stringify({
+    'sticker-pack-id': `bot.${randomUUID()}`,
+    'sticker-pack-name': packName.slice(0, 128),
+    'sticker-pack-publisher': author.slice(0, 128),
+    emojis,
+  }), 'utf-8');
+  // Fixed 22-byte EXIF/TIFF header WhatsApp expects ahead of the JSON payload (little-endian "II").
+  const header = Buffer.from([0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00, 0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00]);
+  header.writeUIntLE(payload.length, 14, 4);
+  img.exif = Buffer.concat([header, payload]);
+  return img.save(null);
 }
 
 /**

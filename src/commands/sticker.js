@@ -1,6 +1,6 @@
 import { UserError } from '../utils/errors.js';
 import { formatBytes } from '../utils/text.js';
-import { canStickerKind, makeSticker } from '../services/sticker.js';
+import { canStickerKind, makeSticker, addStickerMetadata } from '../services/sticker.js';
 
 export default {
   name: 'sticker',
@@ -10,7 +10,7 @@ export default {
   usage: 'sticker (reply to a photo, GIF/video or sticker)',
   details: 'Reply to the media with {p}sticker. Video/GIF clips are capped at 10 seconds. View-once media is refused, same as {p}save.',
   async execute(ctx) {
-    const { client, config } = ctx.deps;
+    const { client, config, settings } = ctx.deps;
     const q = ctx.quoted;
     if (!q) throw new UserError(`Reply to a photo, GIF/video or sticker, then send ${ctx.prefix}sticker.`);
     if (q.info.viewOnce) throw new UserError('View-once messages cannot be turned into a sticker. This bot honours WhatsApp\'s view-once protection.');
@@ -36,6 +36,16 @@ export default {
       ctx.log.error({ err: err.message }, 'sticker conversion failed');
       throw new Error(`sticker conversion failed: ${err.message}`); // not a UserError: surfaced as a reported bug (likely a missing/broken ffmpeg)
     }
+
+    const packName = config.bot.stickerPackName || settings.botName;
+    const author = config.bot.stickerPackAuthor || settings.botName;
+    try {
+      webp = await addStickerMetadata(webp, { packName, author });
+    } catch (err) {
+      // The pack name/author is cosmetic: never fail the whole command over it, just note it.
+      ctx.log.warn({ err: err.message }, 'could not embed sticker pack metadata');
+    }
+
     await client.sendMedia(ctx.chatJid, { kind: 'sticker', buffer: webp }, { quoted: ctx.msg });
   },
 };

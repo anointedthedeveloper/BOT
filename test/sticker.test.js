@@ -67,3 +67,40 @@ test('makeSticker: a missing ffmpeg binary surfaces as an operational error, not
     },
   );
 });
+
+test('addStickerMetadata: embeds a readable pack name, author and emojis into a real WebP', async () => {
+  const { addStickerMetadata } = await import('../src/services/sticker.js');
+  const webpmux = (await import('node-webpmux')).default;
+  const base = await makeSticker(await samplePng(), 'image');
+  const tagged = await addStickerMetadata(base, { packName: '50 Shades of BLACK', author: 'Sin Of Pride', emojis: ['🖤'] });
+  assert.equal(tagged.subarray(0, 4).toString(), 'RIFF');
+
+  const img = new webpmux.Image();
+  await img.load(tagged);
+  const json = JSON.parse(img.exif.subarray(22).toString('utf-8'));
+  assert.equal(json['sticker-pack-name'], '50 Shades of BLACK');
+  assert.equal(json['sticker-pack-publisher'], 'Sin Of Pride');
+  assert.deepEqual(json.emojis, ['🖤']);
+
+  const meta = await sharp(tagged).metadata();
+  assert.equal(meta.width, STICKER_SIZE, 'image data itself is untouched');
+});
+
+test('addStickerMetadata: a no-op without a pack name or author', async () => {
+  const { addStickerMetadata } = await import('../src/services/sticker.js');
+  const base = await makeSticker(await samplePng(), 'image');
+  const result = await addStickerMetadata(base, {});
+  assert.equal(result, base);
+});
+
+test('addStickerMetadata: long names are truncated rather than corrupting the payload', async () => {
+  const { addStickerMetadata } = await import('../src/services/sticker.js');
+  const webpmux = (await import('node-webpmux')).default;
+  const base = await makeSticker(await samplePng(), 'image');
+  const tagged = await addStickerMetadata(base, { packName: 'x'.repeat(500), author: 'y'.repeat(500) });
+  const img = new webpmux.Image();
+  await img.load(tagged);
+  const json = JSON.parse(img.exif.subarray(22).toString('utf-8'));
+  assert.equal(json['sticker-pack-name'].length, 128);
+  assert.equal(json['sticker-pack-publisher'].length, 128);
+});
