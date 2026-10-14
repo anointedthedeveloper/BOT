@@ -99,6 +99,7 @@ Set `AUTH_STORE=mongo` so the WhatsApp session is stored in MongoDB (encrypted w
 ```
 /privacy archive meta     in a chat: remember sender/time/type of new messages (no text)
 /privacy archive full     … and the text, so deleted-message notices can show it
+/privacy archive media    … and photos/videos/stickers/audio/documents, re-sent if deleted
 /privacy archive off      stop and wipe that chat's cache
 /privacy logging off      refuse capture of YOUR text in archived chats
 /privacy retention 14     auto-delete your new saved items after 14 days

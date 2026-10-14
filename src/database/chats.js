@@ -1,8 +1,9 @@
-const ARCHIVE_MODES = ['off', 'meta', 'full'];
+const ARCHIVE_MODES = ['off', 'meta', 'full', 'media'];
 
 /**
  * Per-chat consent state. A chat is archived ONLY after an authorised person switched it on.
- * `meta` records ids/sender/type (enough to say "a message was deleted"); `full` also keeps text.
+ * `meta` records ids/sender/type (enough to say "a message was deleted"); `full` also keeps text;
+ * `media` additionally keeps the (encrypted, short-lived) file of photos/videos/stickers/audio/documents.
  */
 export class ChatsRepository {
   constructor(db, { cacheMs = 15_000, now = () => Date.now() } = {}) {
@@ -33,11 +34,11 @@ export class ChatsRepository {
   }
 
   async countArchived() {
-    return this.col.countDocuments({ 'archive.mode': { $in: ['meta', 'full'] } });
+    return this.col.countDocuments({ 'archive.mode': { $in: ['meta', 'full', 'media'] } });
   }
 
   async listArchivedBy(jid) {
-    return this.col.find({ 'archive.enabledBy': jid, 'archive.mode': { $in: ['meta', 'full'] } }).toArray();
+    return this.col.find({ 'archive.enabledBy': jid, 'archive.mode': { $in: ['meta', 'full', 'media'] } }).toArray();
   }
 }
 

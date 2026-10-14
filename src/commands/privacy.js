@@ -7,12 +7,12 @@ export default {
   aliases: ['data'],
   category: 'Privacy & settings',
   description: 'Configure data retention and logging',
-  usage: 'privacy [logging on|off | retention <days> | archive off|meta|full | export | purge]',
+  usage: 'privacy [logging on|off | retention <days> | archive off|meta|full|media | export | purge]',
   open: true, // opt-outs must stay reachable even when the bot is in private mode
   details: [
     '*logging on|off* – allow or refuse capture of *your* message text in chats that someone archived.',
     '*retention <days>* – how long your saved items are kept (0 = until you delete them).',
-    '*archive off|meta|full* – for THIS chat. meta = sender/time/type only; full = also text. Needed for deleted-message notices. Posts a visible notice. Owner only in groups; in a private chat only you or the owner can change it.',
+    '*archive off|meta|full|media* – for THIS chat. meta = sender/time/type only; full = also text; media = also photos, videos, stickers, audio and documents (encrypted, size-limited, short-lived). Needed for deleted-message notices. Posts a visible notice. Owner only in groups; in a private chat only you or the owner can change it.',
     '*export* – send your saved data as a JSON file.',
     '*purge* – permanently delete everything stored about you ({p}privacy purge confirm).',
   ].join('\n'),
@@ -55,12 +55,13 @@ export default {
     }
 
     if (sub === 'archive') {
-      if (!['off', 'meta', 'full'].includes(arg)) throw new UserError(`Usage: ${p}privacy archive off|meta|full`);
+      if (!['off', 'meta', 'full', 'media'].includes(arg)) throw new UserError(`Usage: ${p}privacy archive off|meta|full|media`);
       if (ctx.role === 'none') throw new UserError('Ask the bot owner to allow you before enabling archiving.');
       if (!canConfigureArchive({ isOwner: ctx.role === 'owner', isGroup: ctx.isGroup, senderCandidates: ctx.sender.candidates, chatJids: ctx.chatJids })) {
         throw new UserError(ctx.isGroup ? 'Only the bot owner can change archiving in a group.' : 'You can only change archiving for your own private chat with the bot.');
       }
-      if (arg === 'full' && !config.privacy.allowContentLogging) throw new UserError('Content logging is disabled by the operator; use "meta".');
+      if ((arg === 'full' || arg === 'media') && !config.privacy.allowContentLogging) throw new UserError('Content logging is disabled by the operator; use "meta".');
+      if (arg === 'media' && !config.privacy.allowMediaCaching) throw new UserError('Media caching is disabled by the operator; use "full" or "meta".');
       const notifyJid = ctx.isGroup || ctx.fromMe ? ctx.sender.jid : ctx.chatJid;
       const { removed } = await archive.setMode({ chatJid: chatKey, mode: arg, enabledBy: ctx.sender.jid, notifyJid });
       ctx.log.info({ mode: arg, removed }, 'archive mode changed');
@@ -76,7 +77,9 @@ export default {
       if (arg !== 'confirm') return ctx.reply(`⚠️ This permanently deletes all your notes, bookmarks, saved messages and files, cached messages from you, and turns off archives you enabled.\nSend *${p}privacy purge confirm* to proceed.`);
       const mediaPaths = await items.deleteAllForUser(jid);
       await mediaStore.removeMany(mediaPaths);
+      const cachedFiles = await messageCache.mediaPathsForSender(jid);
       const cached = await messageCache.deleteForSender(jid);
+      await mediaStore.removeMany(cachedFiles);
       for (const chat of await chats.listArchivedBy(jid)) await archive.setMode({ chatJid: chat._id, mode: 'off', enabledBy: jid });
       await users.resetPrefs(jid);
       return ctx.reply(`🧹 Done. Removed ${mediaPaths.length} files and ${cached} cached messages along with your saved items.`);

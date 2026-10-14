@@ -20,7 +20,9 @@ export function canConfigureArchive({ isOwner, isGroup, senderCandidates, chatJi
  * View-once content and media bytes are never stored.
  */
 export class ArchiveService {
-  constructor({ config, repos, logger }) {
+  constructor({ config, repos, logger, client, mediaStore }) {
+    this.client = client;
+    this.mediaStore = mediaStore;
     this.config = config;
     this.repos = repos;
     this.logger = logger;
@@ -45,15 +47,39 @@ export class ArchiveService {
 
     let contentStored = false;
     let reason = null;
+    let optedOut = false;
     if (info.viewOnce) reason = 'view-once content is never stored';
-    else if (mode !== 'full') reason = 'chat archive mode is metadata-only';
+    else if (mode === 'meta') reason = 'chat archive mode is metadata-only';
     else if (!this.config.privacy.allowContentLogging) reason = 'content logging disabled by operator';
     else {
       const sender = await this.repos.users.get(senderJid);
-      if (sender && sender.prefs.contentLogging === false) reason = 'sender opted out of content logging';
+      optedOut = sender?.prefs.contentLogging === false;
+      if (optedOut) reason = 'sender opted out of content logging';
       else contentStored = Boolean(info.text);
-      if (!reason && !info.text) reason = info.hasMedia ? 'media files are not retained' : 'no text content';
     }
+
+    let mediaFile = null;
+    if (info.hasMedia && !reason) {
+      if (mode !== 'media') reason = 'media files are not retained in this archive mode';
+      else if (!this.config.privacy.allowMediaCaching) reason = 'media caching disabled by operator';
+      else if (!info.size || info.size > this.config.media.maxBytes) reason = 'media is larger than the size limit';
+      else {
+        try {
+          const buffer = await this.client.downloadMedia(msg);
+          if (buffer.length > this.config.media.maxBytes) reason = 'media is larger than the size limit';
+          else {
+            const saved = await this.mediaStore.save(`cache:${chatJid}`, buffer);
+            mediaFile = { path: saved.path, kind: info.kind, mimetype: info.mimetype, fileName: info.fileName, size: saved.size };
+          }
+        } catch (err) {
+          this.logger.warn({ err: err.message }, 'could not cache media of archived chat');
+          reason = 'media could not be downloaded';
+        }
+      }
+    } else if (info.hasMedia && reason === 'chat archive mode is metadata-only') {
+      reason = 'media files are not retained in this archive mode';
+    }
+    if (!reason && !contentStored && !mediaFile) reason = 'no text content';
 
     await this.repos.messageCache.record({
       chatJid,
@@ -67,31 +93,36 @@ export class ArchiveService {
       contentStored,
       reason,
       mediaMeta: info.hasMedia ? { mimetype: info.mimetype, fileName: info.fileName, size: info.size } : null,
+      mediaFile,
     });
-    return { stored: true, contentStored, reason };
+    return { stored: true, contentStored, mediaStored: Boolean(mediaFile), reason };
   }
 
-  /** Enables/disables archiving. Returns the notice text to post in the chat. */
+  /** Enables/disables archiving. Turning it off wipes the chat's cache, including cached files. */
   async setMode({ chatJid, mode, enabledBy, notifyJid }) {
     const isGroup = isGroupJid(chatJid);
     await this.repos.chats.setArchive(chatJid, { mode, enabledBy, notifyJid, isGroup });
     if (mode === 'off') {
+      const files = await this.repos.messageCache.mediaPathsForChat(chatJid);
       const removed = await this.repos.messageCache.deleteForChat(chatJid);
+      await this.mediaStore.removeMany(files);
       return { removed };
     }
     return { removed: 0 };
   }
 
   noticeFor(mode, ttlHours) {
-    if (mode === 'off') return '🛑 Message archiving is now *OFF* for this chat. Cached messages were deleted.';
-    const what = mode === 'full'
-      ? 'message *text* and basic details (sender, time, type)'
-      : 'only basic details (sender, time, type) — no message text';
+    if (mode === 'off') return '🛑 Message archiving is now *OFF* for this chat. Cached messages and files were deleted.';
+    const what = {
+      meta: 'only basic details (sender, time, type) — no message text and no files',
+      full: 'message *text* and basic details (sender, time, type) — no files',
+      media: 'message *text*, basic details, and *photos, videos, stickers, audio and documents* (size-limited, encrypted)',
+    }[mode];
     return [
       `📦 Message archiving is now *ON (${mode})* for this chat.`,
-      `The bot keeps ${what} of messages it receives here for ${ttlHours}h, solely to describe deletions to the person who enabled it.`,
-      'Media files and view-once content are never stored.',
-      'Anyone can opt out of text capture with the "logging off" option of the privacy command, or turn the chat off with "archive off".',
+      `The bot keeps ${what} of messages it receives here for ${ttlHours}h, solely to show them to the person who enabled it if they get deleted.`,
+      'View-once content is never stored.',
+      'Anyone can opt out of capture with the "logging off" option of the privacy command, or turn the chat off with "archive off".',
     ].join('\n');
   }
 }

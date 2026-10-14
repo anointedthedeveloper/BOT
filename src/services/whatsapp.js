@@ -270,6 +270,7 @@ export class WhatsAppClient {
     const content = {
       image: { image: buffer, caption },
       video: { video: buffer, caption },
+      sticker: { sticker: buffer },
       audio: { audio: buffer, mimetype: mimetype || 'audio/ogg; codecs=opus' },
       document: { document: buffer, mimetype: mimetype || 'application/octet-stream', fileName: fileName || 'file', caption },
     }[kind] ?? { document: buffer, mimetype: mimetype || 'application/octet-stream', fileName: fileName || 'file' };

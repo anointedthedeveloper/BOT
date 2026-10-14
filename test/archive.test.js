@@ -47,7 +47,7 @@ test('enabling posts a visible notice in the chat', async () => {
   assert.equal(await h.deps.chats.archiveMode(GROUP), 'full');
   const notice = h.lastText(GROUP);
   assert.match(notice, /archiving is now \*ON \(full\)\*/);
-  assert.match(notice, /view-once content are never stored/);
+  assert.match(notice, /View-once content is never stored/);
   assert.match(notice, /24h/);
 });
 
@@ -228,6 +228,137 @@ test('strangers in private mode cannot enable archiving', async () => {
     await h2.say(OWNER_JID, `/admin allow ${ALICE.split('@')[0]}`);
     await h2.say(ALICE, '/privacy archive full');
     assert.equal(await h2.deps.chats.archiveMode(ALICE), 'full');
+  } finally {
+    await h2.stop();
+  }
+});
+
+// ── media archive mode ────────────────────────────────────────────────────────
+import { readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
+
+const mediaFiles = async () => (await readdir(h.config.media.dir, { recursive: true, withFileTypes: true }).catch(() => [])).filter((d) => d.isFile());
+const enableMedia = () => h.say(OWNER_JID, '/privacy archive media', { group: true });
+const media = (kind, extra = {}) => ({ [`${kind}Message`]: { mimetype: 'x/y', fileLength: 16, mediaKey: 'k', ...extra } });
+
+test('media mode: notice lists files; photo is cached encrypted and re-sent when deleted', async () => {
+  await enableMedia();
+  assert.match(h.lastText(GROUP), /ON \(media\)/);
+  assert.match(h.lastText(GROUP), /photos, videos, stickers, audio and documents/);
+  h.clearSent();
+
+  const id = nextId();
+  await h.say(ALICE, '', { group: true, id, raw: media('image', { caption: 'look at this', mimetype: 'image/jpeg' }) });
+  const doc = await cached(id);
+  assert.equal(doc.mediaFile.kind, 'image');
+  assert.equal(doc.expiresAt, undefined, 'media docs are swept by the job, not the TTL index');
+  assert.ok(doc.sweepAt);
+  const files = await mediaFiles();
+  assert.equal(files.length, 1);
+  const onDisk = await readFile(path.join(files[0].parentPath ?? files[0].path, files[0].name));
+  assert.ok(!onDisk.includes('FAKE-MEDIA-BYTES'), 'encrypted at rest');
+
+  await h.revoke(GROUP, id, { participant: ALICE });
+  const note = h.lastText(OWNER_JID);
+  assert.match(note, /original content available/);
+  assert.match(note, /look at this/);
+  assert.match(note, /sent below/);
+  const resent = h.sock.sent.findLast((s) => s.jid === OWNER_JID && s.content.image);
+  assert.equal(resent.content.image.toString(), 'FAKE-MEDIA-BYTES');
+  assert.equal(resent.content.caption, 'look at this');
+  assert.equal(await cached(id), null);
+  assert.equal((await mediaFiles()).length, 0, 'file deleted after delivery');
+});
+
+test('media mode covers video, sticker, audio and document', async () => {
+  await enableMedia();
+  for (const [kind, key] of [['video', 'video'], ['sticker', 'sticker'], ['audio', 'audio'], ['document', 'document']]) {
+    h.clearSent();
+    const id = nextId();
+    await h.say(ALICE, '', { group: true, id, raw: media(key, key === 'document' ? { fileName: 'a.pdf' } : {}) });
+    await h.revoke(GROUP, id, { participant: ALICE });
+    const resent = h.sock.sent.findLast((s) => s.jid === OWNER_JID && s.content[kind]);
+    assert.ok(resent, `${kind} re-sent`);
+  }
+  assert.equal((await mediaFiles()).length, 0);
+});
+
+test('full mode never downloads files; sender opt-out and view-once are respected in media mode', async () => {
+  await enableGroup('full');
+  const a = nextId();
+  await h.say(ALICE, '', { group: true, id: a, raw: media('image') });
+  assert.equal((await cached(a)).mediaFile, null);
+  assert.match((await cached(a)).reason, /not retained/);
+
+  await enableMedia();
+  await h.say(BOB, '/privacy logging off', { group: true });
+  const b = nextId();
+  await h.say(BOB, '', { group: true, id: b, raw: media('image') });
+  assert.equal((await cached(b)).mediaFile, null);
+  assert.match((await cached(b)).reason, /opted out/);
+
+  const v = nextId();
+  await h.say(ALICE, '', { group: true, id: v, raw: { viewOnceMessageV2: { message: media('image') } } });
+  assert.equal((await cached(v)).mediaFile, null);
+  assert.match((await cached(v)).reason, /view-once/);
+  assert.equal((await mediaFiles()).length, 0, 'no files written in any of these cases');
+});
+
+test('media over the size limit is not downloaded', async () => {
+  await enableMedia();
+  const id = nextId();
+  await h.say(ALICE, '', { group: true, id, raw: media('video', { fileLength: 500 * 1024 * 1024 }) });
+  assert.equal((await cached(id)).mediaFile, null);
+  assert.match((await cached(id)).reason, /size limit/);
+});
+
+test('turning archiving off, or purging, deletes cached files', async () => {
+  await enableMedia();
+  await h.say(ALICE, '', { group: true, id: nextId(), raw: media('image') });
+  assert.equal((await mediaFiles()).length, 1);
+  await h.say(OWNER_JID, '/privacy archive off', { group: true });
+  assert.equal((await mediaFiles()).length, 0);
+
+  await h.say(ALICE, '/privacy archive media');
+  await h.say(ALICE, '', { id: nextId(), raw: media('image') });
+  assert.equal((await mediaFiles()).length, 1);
+  await h.say(ALICE, '/privacy purge confirm');
+  assert.equal((await mediaFiles()).length, 0);
+});
+
+test('retention sweep removes expired cached media with its file', async () => {
+  await enableMedia();
+  const id = nextId();
+  await h.say(ALICE, '', { group: true, id, raw: media('image') });
+  await h.deps.messageCache.col.updateOne({ msgId: id }, { $set: { sweepAt: new Date(Date.now() - 1000) } });
+  const { startRetentionJob } = await import('../src/services/retention.js');
+  const job = startRetentionJob({ items: h.deps.items, messageCache: h.deps.messageCache, mediaStore: h.deps.mediaStore, logger: { info() {}, warn() {} }, intervalMs: 3_600_000 });
+  await job.runOnce();
+  job.stop();
+  assert.equal(await cached(id), null);
+  assert.equal((await mediaFiles()).length, 0);
+});
+
+test('operator switch ALLOW_MEDIA_CACHING=false blocks media mode', async () => {
+  const h2 = await startHarness({ env: { ALLOW_MEDIA_CACHING: 'false' } });
+  try {
+    await h2.say(OWNER_JID, '/privacy archive media', { group: true });
+    assert.match(h2.lastText(GROUP), /Media caching is disabled by the operator/);
+    assert.equal(await h2.deps.chats.archiveMode(GROUP), 'off');
+  } finally {
+    await h2.stop();
+  }
+});
+
+test('a failed media download is recorded as metadata with a reason', async () => {
+  const h2 = await startHarness({ baileysOptions: { downloadError: new Error('expired') } });
+  try {
+    await h2.say(OWNER_JID, '/privacy archive media', { group: true });
+    const id = nextId();
+    await h2.say(ALICE, '', { group: true, id, raw: media('image') });
+    const doc = await h2.deps.messageCache.col.findOne({ msgId: id });
+    assert.equal(doc.mediaFile, null);
+    assert.match(doc.reason, /could not be downloaded/);
   } finally {
     await h2.stop();
   }

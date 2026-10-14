@@ -16,7 +16,8 @@ export function isRevokeUpdate(u) {
  * Chats that are not archived produce no notification at all.
  */
 export class DeletionNotifier {
-  constructor({ repos, client, logger, ttlHours }) {
+  constructor({ repos, client, logger, mediaStore, ttlHours }) {
+    this.mediaStore = mediaStore;
     this.repos = repos;
     this.client = client;
     this.logger = logger;
@@ -43,7 +44,7 @@ export class DeletionNotifier {
     if (enabler && enabler.prefs.notifyDeletes === false) return { outcome: 'notifications-off', notified: false };
 
     const cached = await this.repos.messageCache.find(chatJids, key.id);
-    const outcome = !cached ? 'unknown-original' : cached.contentStored ? 'original-available' : 'metadata-only';
+    const outcome = !cached ? 'unknown-original' : cached.contentStored || cached.mediaFile ? 'original-available' : 'metadata-only';
     const tz = enabler?.prefs.timezone ?? 'UTC';
     const text = this.#format(outcome, cached, key, chatJids[0], tz);
 
@@ -53,9 +54,23 @@ export class DeletionNotifier {
       this.logger.warn({ err: err.message, outcome }, 'failed to send deletion notification');
       return { outcome, notified: false, error: err.message };
     }
-    if (cached) await this.repos.messageCache.remove(chatJids, key.id); // delivered once; don't keep deleted content around
+    if (cached?.mediaFile) await this.#resendMedia(target, cached);
+    if (cached) {
+      await this.repos.messageCache.remove(chatJids, key.id); // delivered once; don't keep deleted content around
+      if (cached.mediaFile) await this.mediaStore.remove(cached.mediaFile.path);
+    }
     this.logger.info({ outcome, chat: maskJid(chatJids[0]) }, 'deletion notification sent');
     return { outcome, notified: true };
+  }
+
+  async #resendMedia(target, c) {
+    try {
+      const buffer = await this.mediaStore.read(c.mediaFile.path);
+      await this.client.sendMedia(target, { kind: c.mediaFile.kind, buffer, mimetype: c.mediaFile.mimetype, fileName: c.mediaFile.fileName, caption: c.text || undefined });
+    } catch (err) {
+      this.logger.warn({ err: err.message }, 'failed to re-send cached media');
+      await this.client.sendText(target, '⚠️ The deleted file was captured but could not be re-sent.').catch(() => {});
+    }
   }
 
   #format(outcome, c, key, chatJid, tz) {
@@ -77,7 +92,12 @@ export class DeletionNotifier {
       `Type: ${KIND_ICON[c.kind] ?? ''} ${c.kind}${c.mediaMeta?.size ? ` (${formatBytes(c.mediaMeta.size)})` : ''}`,
       deletedBy && deletedBy !== this.#label(c.senderJid) ? `Deleted by: ${deletedBy}` : null,
     ].filter(Boolean);
-    if (outcome === 'original-available') return [...head, '', 'Original text (captured while this chat was archived):', c.text].join('\n');
+    if (outcome === 'original-available') {
+      const lines = [...head, ''];
+      if (c.text) lines.push('Original text (captured while this chat was archived):', c.text);
+      if (c.mediaFile) lines.push(`Original ${c.mediaFile.kind} captured while archived — sent below.`);
+      return lines.join('\n');
+    }
     return [...head, `Why no content: ${c.reason ?? 'not captured'}.`].join('\n');
   }
 

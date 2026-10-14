@@ -26,9 +26,9 @@ A privacy-first, modular WhatsApp utility bot built on [Baileys](https://github.
 ### How deleted-message notifications actually work
 
 1. An authorised person runs `/privacy archive meta|full` in a chat. The bot **posts a visible notice in that chat**. Only the owner can do this in groups; anyone else only in their own private chat with the bot.
-2. While a chat is archived, each message the bot *receives* is cached for `CACHE_TTL_HOURS` (default 24h): sender, time and type (`meta`), plus the text (`full`, only if the sender has not opted out and the operator allows it). Media files are **never** cached; view-once content is **never** stored.
+2. While a chat is archived, each message the bot *receives* is cached for `CACHE_TTL_HOURS` (default 24h): sender, time and type (`meta`); plus the text (`full`); plus photos, videos, stickers, audio and documents up to `MAX_MEDIA_MB` (`media`, encrypted on disk when a key is set). Text and files are only kept if the sender has not opted out and the operator allows it (`ALLOW_CONTENT_LOGGING`, `ALLOW_MEDIA_CACHING`). View-once content is **never** stored.
 3. When WhatsApp sends a revoke event, the bot reports exactly one of:
-   - 🗑️ **original content available** – text was captured while the chat was archived;
+   - 🗑️ **original content available** – text and/or the file was captured while the chat was archived (the file is re-sent right after the notice);
    - 🗑️ **content not stored** – the message was seen, but only metadata was kept (and why: meta mode, sender opt-out, media, view-once…);
    - 🗑️ **original NOT available** – the bot has no record of it (sent before archiving, not received, or expired).
 4. Chats that are not archived produce nothing: no cache, no notice.
@@ -61,7 +61,7 @@ docker compose logs -f bot  # scan the QR code on first run
 | `/bookmark [note]` (reply) · `list` · `show` · `delete` | users | Saves a *reference* + 200-char excerpt |
 | `/save [note]` (reply) · `/saved list\|show\|delete` | users | Saves text/media you chose to keep |
 | `/search words [type:…] [#tag]` | users | Searches your own saved content |
-| `/privacy [logging\|retention\|archive\|export\|purge]` | everyone* | Data retention and logging controls |
+| `/privacy [logging\|retention\|archive off\|meta\|full\|media\|export\|purge]` | everyone* | Data retention and logging controls |
 | `/owner` | everyone | Owner contact (only what the operator configured) |
 | `/admin allow\|disallow\|ban\|unban\|list\|stats` | admins | User management |
 | `/admin promote\|demote\|prefix\|botname\|identity-reset` | owner | Role & identity management |

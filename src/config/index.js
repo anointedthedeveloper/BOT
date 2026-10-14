@@ -99,6 +99,7 @@ export function loadConfig(env = process.env) {
     privacy: {
       encryptionKey,
       allowContentLogging: bool('ALLOW_CONTENT_LOGGING', true),
+      allowMediaCaching: bool('ALLOW_MEDIA_CACHING', true),
       cacheTtlHours: int('CACHE_TTL_HOURS', 24, 1, 168),
       defaultRetentionDays: int('DEFAULT_RETENTION_DAYS', 30, 0, 3650),
       maxRetentionDays: int('MAX_RETENTION_DAYS', 365, 1, 3650),

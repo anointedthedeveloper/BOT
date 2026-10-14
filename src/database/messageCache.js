@@ -10,7 +10,7 @@ export class MessageCacheRepository {
     this.now = now;
   }
 
-  async record({ chatJid, chatAlt, msgId, senderJid, fromMe, timestamp, kind, text, contentStored, reason, mediaMeta }) {
+  async record({ chatJid, chatAlt, msgId, senderJid, fromMe, timestamp, kind, text, contentStored, reason, mediaMeta, mediaFile }) {
     const createdAt = this.now();
     await this.col.updateOne(
       { chatJid, msgId },
@@ -22,7 +22,10 @@ export class MessageCacheRepository {
           reason: reason ?? null,
           mediaMeta: mediaMeta ?? null,
           createdAt,
-          expiresAt: new Date(createdAt.getTime() + this.ttlMs),
+          mediaFile: mediaFile ?? null,
+          // Documents with a file on disk are swept by the retention job (so the file goes too);
+          // all others expire through the MongoDB TTL index on `expiresAt`.
+          ...(mediaFile ? { sweepAt: new Date(createdAt.getTime() + this.ttlMs) } : { expiresAt: new Date(createdAt.getTime() + this.ttlMs) }),
         },
       },
       { upsert: true },
@@ -39,6 +42,24 @@ export class MessageCacheRepository {
   async remove(chatJids, msgId) {
     const ids = [...new Set(chatJids.filter(Boolean))];
     await this.col.deleteOne({ msgId, $or: [{ chatJid: { $in: ids } }, { chatAlt: { $in: ids } }] });
+  }
+
+  async mediaPathsForChat(chatJid) {
+    const docs = await this.col.find({ $or: [{ chatJid }, { chatAlt: chatJid }], mediaFile: { $ne: null } }, { projection: { mediaFile: 1 } }).toArray();
+    return docs.map((d) => d.mediaFile.path);
+  }
+
+  async mediaPathsForSender(senderJid) {
+    const docs = await this.col.find({ senderJid, mediaFile: { $ne: null } }, { projection: { mediaFile: 1 } }).toArray();
+    return docs.map((d) => d.mediaFile.path);
+  }
+
+  /** Removes cached messages whose media file is past its lifetime; returns the file paths to delete. */
+  async deleteExpiredMedia(now = this.now()) {
+    const docs = await this.col.find({ sweepAt: { $lte: now } }, { projection: { mediaFile: 1 } }).toArray();
+    if (!docs.length) return { removed: 0, mediaPaths: [] };
+    await this.col.deleteMany({ _id: { $in: docs.map((d) => d._id) } });
+    return { removed: docs.length, mediaPaths: docs.map((d) => d.mediaFile?.path).filter(Boolean) };
   }
 
   async deleteForChat(chatJid) {

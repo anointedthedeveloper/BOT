@@ -12,13 +12,13 @@
 |---|---|---|---|
 | User row: preferences, role, allow/ban flags, counter | First time someone uses a command | Preferences are reset by `/privacy purge`; the row itself stays so bans remain effective | `users` |
 | Notes, bookmarks, saved messages/media | Only when the user explicitly runs `/note`, `/bookmark`, `/save` | Per-user retention (default 30 days; `0` = until deleted) | `items`, media files |
-| Message cache (sender id, time, type, optional text) | Only in chats where an authorised person ran `/privacy archive meta\|full`, announced in the chat | `CACHE_TTL_HOURS` (default 24h), deleted after a notification is delivered, wiped on `archive off` | `message_cache` (TTL index) |
+| Message cache (sender id, time, type, optional text, optional media file) | Only in chats where an authorised person ran `/privacy archive meta\|full\|media`, announced in the chat | `CACHE_TTL_HOURS` (default 24h), deleted after a notification is delivered, wiped on `archive off` | `message_cache` (TTL index) |
 | Chat archive setting | When archiving is configured | Until changed | `chats` |
 | WhatsApp session | After linking | Until logout / `auth:reset` | `AUTH_DIR` or `wa_auth` |
 
-Never stored: media from archived chats, view-once content, status updates/broadcasts, newsletters, history-sync backlog, message text unless `full` mode + sender not opted out + operator allows.
+Never stored: media in `meta`/`full` mode, media over `MAX_MEDIA_MB`, view-once content, status updates/broadcasts, newsletters, history-sync backlog, message text unless `full`/`media` mode + sender not opted out + operator allows; files unless `media` mode + sender not opted out + `ALLOW_MEDIA_CACHING`. Cached files are deleted after the deletion notice is delivered, when archiving is turned off, on `/privacy purge`, or after `CACHE_TTL_HOURS`.
 
-Encryption at rest (AES-256-GCM, `DATA_ENCRYPTION_KEY`) covers item text/notes, cached text, saved media files and the Mongo-stored session. It does **not** hide metadata such as ids and timestamps, and a file-based session (`AUTH_STORE=file`) is plain Baileys output — protect that volume.
+Encryption at rest (AES-256-GCM, `DATA_ENCRYPTION_KEY`) covers item text/notes, cached text, cached and saved media files and the Mongo-stored session. It does **not** hide metadata such as ids and timestamps, and a file-based session (`AUTH_STORE=file`) is plain Baileys output — protect that volume.
 
 ## Consent model
 

@@ -41,8 +41,8 @@ export async function createApp(config, { logger = createLogger(config), databas
     authProvider: createAuthProvider({ config, db: database.db, cipher, baileys }),
   });
 
-  const archive = new ArchiveService({ config, repos, logger });
-  const deletions = new DeletionNotifier({ repos, client, logger, ttlHours: config.privacy.cacheTtlHours });
+  const archive = new ArchiveService({ config, repos, logger, client, mediaStore });
+  const deletions = new DeletionNotifier({ repos, client, logger, mediaStore, ttlHours: config.privacy.cacheTtlHours });
 
   const ownerJids = config.owners.map((o) => (o.includes('@') ? o : numberToJid(o)));
   errorReporter.setNotifier((text) => Promise.all(ownerJids.map((j) => client.sendText(j, text))));
@@ -77,7 +77,7 @@ export async function createApp(config, { logger = createLogger(config), databas
   client.on('fatal', ({ reason }) => shutdown(1, `fatal:${reason}`));
 
   const retention = startRetentionJob({
-    items: repos.items, mediaStore, logger, intervalMs: config.privacy.retentionSweepMs, onError: report,
+    items: repos.items, messageCache: repos.messageCache, mediaStore, logger, intervalMs: config.privacy.retentionSweepMs, onError: report,
   });
   const sweepTimer = setInterval(() => limiter.sweep(), 60_000);
   sweepTimer.unref();
