@@ -1,45 +1,50 @@
-# WhatsApp Utility Bot
+# WhatsApp Deleted-Message & Sticker Bot
 
-A privacy-first, modular WhatsApp utility bot built on [Baileys](https://github.com/WhiskeySockets/Baileys) (`7.0.0-rc14`) and MongoDB. It helps you save and organise messages you choose to keep, search them, and — **only in chats where archiving was explicitly switched on** — tells you when a message was deleted, being precise about whether the original content was actually available.
+A small, single-purpose WhatsApp bot built on [Baileys](https://github.com/WhiskeySockets/Baileys) (`7.0.0-rc14`) and MongoDB. It does exactly two things: tells the owner privately when a monitored message gets deleted (with the original content, if it was captured), and turns photos/videos into WhatsApp stickers. Nothing else.
 
-> **Read this first:** Baileys is an *unofficial* WhatsApp Web client. Using it can violate WhatsApp's Terms of Service and can get a number restricted or banned. Use a dedicated number, never message people who did not ask for it, and see [docs/PRIVACY.md](docs/PRIVACY.md) for the full risk and privacy discussion.
+> **Unofficial WhatsApp client:** Baileys is a reverse-engineered WhatsApp Web client, not an official API. Using it can violate WhatsApp's Terms of Service and risks the linked number being restricted. Use a dedicated number. See [docs/PRIVACY.md](docs/PRIVACY.md) for the full risk and privacy discussion.
 
-## What is and isn't supported
+## Commands
 
-| Requested feature | Status | Notes |
-|---|---|---|
-| Command router, `/menu /help /ping /info /settings /bookmark /search /privacy /owner /restart` | ✅ Supported | Plus `/note`, `/save` (alias `/saved`) and `/admin`. |
-| Save & organise messages | ✅ Supported | Works on messages **you reply to** with `/save` or `/bookmark` (WhatsApp includes the quoted content in your reply). Text, image, video, audio, document, sticker. Files are stored per-user, encrypted at rest when a key is set. |
-| Bookmarks & personal notes, `#tags` | ✅ Supported | Per-user numbering (`#12`). |
-| Search saved content | ✅ Supported | Searches only the requester's own notes/bookmarks/saved items (`/search words type:note #tag`). |
-| Configurable notifications | ✅ Supported | `/settings set notifyDeletes on\|off`, `ackReactions`, `timezone`. |
-| **Deleted-message notifications** | ⚠️ **Depends on events** | Requires (1) the bot to be connected when the delete arrives, and (2) the chat to have been archived *before* the message was sent. See below. |
-| Privacy controls | ✅ Supported | `/privacy`: archive mode per chat, sender opt-out, retention, export, purge. Operator kill-switch `ALLOW_CONTENT_LOGGING=false`. |
-| Roles, rate limiting, spam mute, health checks, structured redacted logs, error reporting | ✅ Supported | |
-| Configurable prefix & identity | ✅ Supported | Env defaults; owner can override at runtime (`/admin prefix`, `/admin botname`). |
-| QR login, pairing-code login, session persistence, reconnection, graceful shutdown | ✅ Supported | Session in files or MongoDB. |
-| Docker + compose | ✅ Provided | See *Verification status* below. |
-| **View-once media** | ❌ **Not implemented — by design** | The bot never opens, saves or forwards view-once content. A view-once message is recorded (if at all) as "a view-once message arrived" with no content, and `/save` refuses it. |
-| Recovering messages the bot never received / was offline for / from before archiving was on | ❌ Impossible | WhatsApp delivers a delete as an *event* only; it does not include the old content. |
-| Reading other people's devices, or silently logging groups/contacts | ❌ Not implemented | Archiving needs an explicit, announced opt-in per chat. |
+The prefix is a comma (`,`), fixed — there is no command to change it.
 
-### How deleted-message recovery actually works
+```
+DELETED MESSAGES
+,delete on      — Enable monitoring
+,delete off     — Disable monitoring (also wipes everything cached)
+,delete status  — Check monitoring status
 
-A chat starts capturing messages in one of two ways — **there is no third, silent one**:
+STICKERS
+,sticker        — Reply to (or caption) a photo, GIF/video or sticker to convert it
 
-- **Per chat, deliberately:** an authorised person runs `/privacy archive meta|full|media` in that chat. Only the owner can do this in groups; anyone else only in their own private chat with the bot.
-- **Everywhere, as a standing default:** the owner runs `/delete on` (or sets `DEFAULT_ARCHIVE_MODE` in `.env`). This applies to every chat — existing and new — without running a command in each one. `/delete on dm` additionally routes the recovered content to the owner privately instead of posting it back in the chat (see below) — the activation notice still fires and says which.
+SETTINGS
+,settings            — Compact overview of what's on
+,settings delete on|off
+,settings sticker on|off
+,settings status      — Current values
+```
 
-Either way, the **first message captured in a chat always triggers the same visible "archiving is ON" notice posted right there in that chat** — nobody's messages are ever captured without that chat seeing it happen, and that notice is not affected by `inchat`/`dm`. A chat explicitly turned off with `/privacy archive off` stays off even while the global default is on.
+Everything above except `,menu` itself (which just prints this) is owner-only. See [Roles](#roles) below — there is no user-management system left in this bot, so "owner" is the only privileged role that exists.
 
-While a chat is archiving, each message the bot *receives* is cached for `CACHE_TTL_HOURS` (default 24h): sender, time and type (`meta`); plus the text (`full`); plus photos, videos, stickers, audio and documents up to `MAX_MEDIA_MB` (`media`, encrypted on disk when a key is set). Text and files are only kept if the sender has not opted out and the operator allows it (`ALLOW_CONTENT_LOGGING`, `ALLOW_MEDIA_CACHING`). View-once content is **never** stored, under any mode.
+## How deleted-message monitoring works — and its real limits
 
-When WhatsApp sends a revoke event for a message in an archiving chat, the bot posts exactly one of these back — into that same chat by default, or to the owner privately for a chat covered by `/delete on dm`, never to anyone else:
-- 🗑️ **original content available** – text and/or the file was captured (the file is re-sent right after the notice);
-- 🗑️ **content not stored** – the message was seen, but only metadata was kept (and why: meta mode, sender opt-out, media, view-once…);
-- 🗑️ **original NOT available** – the bot has no record of it (sent before archiving, not received, or expired).
+1. `,delete on` turns monitoring on for **every chat the bot is in**, immediately, without touching each chat individually.
+2. The **first message a chat sends after that** triggers a one-time, visible `📦 Deleted-message monitoring is now ON` notice posted **in that chat**. This is not optional and cannot be turned off — anyone in a monitored chat can see monitoring is active.
+3. While monitoring is on, each message the bot *receives* is cached briefly (`CACHE_TTL_HOURS`, default 24h): sender, time, type, and — when `ALLOW_CONTENT_LOGGING`/`ALLOW_MEDIA_CACHING` allow it — the text and/or media file too (encrypted on disk when `DATA_ENCRYPTION_KEY` is set).
+4. When WhatsApp reports a message was deleted (`revoke`), the bot sends the **owner** (never anyone else, never posted back in the chat) exactly one of:
+   - 🗑️ **original content available** — the text and/or file was captured; the file is re-sent right after.
+   - 🗑️ **content not stored** — the bot saw the message but didn't keep its content (and says why).
+   - 🗑️ **original NOT available** — the bot has no record of it at all.
+5. `,delete off` turns monitoring off everywhere and **deletes every cached message and file** immediately — nothing is left lingering once it's off.
 
-Chats that are not archiving produce nothing: no cache, no notice.
+**Hard limits, not bugs:**
+- A message deleted **before** `,delete on` was ever run, or sent while the bot was offline, cannot be recovered — WhatsApp's delete event carries only the message's id, never its old content. The bot reports this plainly ("original NOT available") rather than guessing.
+- Media is only captured when `ALLOW_MEDIA_CACHING=true` (the default); if the operator disables it, deleted photos/videos are reported but never shown.
+- A chat that was **never monitored** (no message captured there since monitoring last turned on) never produces a notification at all, even if a message is deleted in it.
+
+## View-once media: not implemented, on purpose
+
+View-once is WhatsApp's own protection on media the sender marked "see once." There is no officially supported, permitted way for a linked-device client like this bot to retain view-once content after it's been viewed — doing so would mean silently defeating a protection the sender deliberately turned on, without their knowledge. Rather than fake this or quietly work around it, this bot **does not implement it**: no `,viewonce` command exists, `/sticker` and nothing else ever touches view-once content, and the menu never advertises a feature that isn't there. If Baileys or WhatsApp ever exposes a compliant, authorized way to do this, it can be added later — until then, leaving it out is the honest choice.
 
 ## Quick start
 
@@ -49,91 +54,72 @@ npm ci
 npm start                   # scan the QR code: WhatsApp > Linked devices > Link a device
 ```
 
-Then send `/ping` from the owner number. Full instructions (Docker, VPS, backups, troubleshooting): **[docs/SETUP.md](docs/SETUP.md)**.
+Then, from the owner's number, send `,menu`. Full instructions (Docker, VPS, troubleshooting): **[docs/SETUP.md](docs/SETUP.md)**.
 
 ```bash
 docker compose up -d        # bot + MongoDB
 docker compose logs -f bot  # scan the QR code on first run
 ```
 
-## Commands
+## Stickers
 
-| Command | Who | What it does |
-|---|---|---|
-| `/menu` | everyone | Lists the commands you may use |
-| `/help [cmd]` | everyone | Usage instructions |
-| `/ping` | everyone | Responsiveness check |
-| `/info` | everyone | Version, uptime, connection status (admins also see counters) |
-| `/settings [set k v \| reset]` | users | Personal preferences |
-| `/note <text>` · `list` · `show #n` · `delete #n` | users | Personal notes, `#tags` supported |
-| `/bookmark [note]` (reply) · `list` · `show` · `delete` | users | Saves a *reference* + 200-char excerpt |
-| `/save [note]` (reply) · `/saved list\|show\|delete` | users | Saves text/media you chose to keep |
-| `/sticker` (reply to, or send/caption, a photo/GIF/video/sticker) | users | Converts it into a WhatsApp sticker |
-| `/search words [type:…] [#tag]` | users | Searches your own saved content |
-| `/privacy [logging\|retention\|archive off\|meta\|full\|media\|export\|purge]` | everyone* | Data retention and logging controls |
-| `/owner` | everyone | Owner contact (only what the operator configured) |
-| `/admin allow\|disallow\|ban\|unban\|list\|stats` | admins | User management |
-| `/admin promote\|demote\|prefix\|botname\|identity-reset` | owner | Role & identity management |
-| `/delete on [inchat\|dm]\|off\|status` | owner | Deleted-message recovery as the *live default* for every chat (see below) |
-| `/restart` → `/restart confirm` | owner | Two-step restart |
+Reply to a photo, GIF/video or existing sticker with `,sticker` — or send/caption the media itself with `,sticker` — to get it back as a WhatsApp sticker. Images are padded to a 512×512 transparent WebP via `sharp`; video/GIF clips (capped at 10 seconds) become an animated WebP via `ffmpeg`. Both are bundled in the Docker image; `ffmpeg` must be installed separately for a non-Docker deployment (static image stickers work without it).
 
-\* `/privacy` stays reachable even in private mode so anyone can opt out of text capture.
+- Oversized files are refused before downloading (`MAX_MEDIA_MB`).
+- Unsupported formats (audio, documents, plain text) get a clear "can't sticker that" message, not a crash.
+- A broken/corrupt file is reported as a friendly error; an actual processing failure (e.g. `ffmpeg` missing) is reported as a bug instead, with a reference.
+- All temporary files are written to a per-conversion temp directory and removed when the command finishes, success or failure.
+- The sticker's pack name/author (`STICKER_PACK_NAME`/`STICKER_PACK_AUTHOR`) default to the bot's name.
+- Can be switched off entirely with `,settings sticker off`.
 
-## Roles & modes
+## Settings persistence
 
-- **owner** – listed in `OWNER_NUMBERS` (config only; the database can never grant it) or a message sent from the linked account itself.
-- **admin** – promoted by the owner.
-- **user** – anyone when `BOT_MODE=public`; otherwise only people the owner/admins `allow`.
-- Others (private mode) are ignored silently; banned users are ignored silently.
+`,delete on/off` and `,settings sticker on/off` are stored in MongoDB (the `bot_config` collection) and survive a restart — set once, they stay set until changed again.
+
+## Roles
+
+- **owner** — listed in `OWNER_NUMBERS` (config only; the database can never grant this) or a message sent from the linked account itself. Owner-only: `,delete`, `,settings`.
+- Everyone else can use `,menu` and (when enabled and `BOT_MODE=public`) `,sticker`. There is no admin/allow-list tier in this build — it was removed along with the other general-purpose commands.
 
 ## Architecture
 
 ```
 src/
   index.js          process entry: config, signals, startup
-  app.js            composition root (wires everything, lifecycle)
-  config/           env parsing + validation (fails fast, lists all problems)
-  events/           WhatsApp event handlers (context building, message upsert)
-  commands/         one file per command + registry + router
-  middleware/       error boundary → identity/role → rate limit → authorize
-  services/         WhatsApp client, archive, deletion notifier, permissions,
-                    rate limiter, media store, retention job, health, error reporter
-  database/         MongoDB connection, indexes, repositories, Mongo auth state
-  utils/            logger (redaction), crypto, jid/message parsing, text helpers
-test/               node:test suites (real mongod via mongodb-memory-server, fake socket)
+  app.js             composition root (wires everything, lifecycle)
+  config/            env parsing + validation (fails fast, lists all problems)
+  events/            WhatsApp event handlers (context building, message upsert)
+  commands/          delete.js, menu.js, settings.js, sticker.js + registry/router
+  middleware/        error boundary → identity/role → rate limit → authorize
+  services/          WhatsApp client, archive (capture), deletion notifier, permissions,
+                      rate limiter, media store, sticker conversion, retention sweep, health
+  database/          MongoDB connection, indexes, repositories (users, chats, message cache)
+  utils/             logger (redaction), crypto, jid/message parsing, text helpers
+test/                node:test suites (real mongod via mongodb-memory-server, fake socket,
+                      real sharp/ffmpeg sticker conversions)
 ```
-
-Events → `events/` (no business logic) → `services/` (rules) → `database/` (persistence). Commands only talk to services/repositories through the dependency container.
 
 ## Security highlights
 
 - No credentials in code; everything via environment variables. `.env`, `data/` and auth folders are git-ignored.
-- QR codes and pairing codes are printed to the terminal only — never to the logger. The logger redacts credentials, keys, URIs and message bodies; JIDs are masked (`user:…0001`).
-- Optional AES-256-GCM encryption at rest (`DATA_ENCRYPTION_KEY`) for notes, saved text, cached text, saved media and the Mongo-stored WhatsApp session.
+- QR codes and pairing codes are printed to the terminal (or saved to `QR_IMAGE_PATH`) only — never to the logger. The logger redacts credentials, keys, URIs and message bodies; JIDs are masked in logs.
+- Optional AES-256-GCM encryption at rest (`DATA_ENCRYPTION_KEY`) for cached message text, cached media files and the Mongo-stored WhatsApp session.
 - The WhatsApp session is a full-account credential: protect the `/data` volume or Mongo database like a password.
-- Admin/owner commands are authorised by role on every call; owner status cannot be set through the database; admins cannot ban the owner or other admins.
-- Per-user rate limiting with escalation to a temporary mute. Replayed (stale) messages after a reconnect are ignored for command purposes.
-- Minimal collection: nothing is captured from a chat without an announced opt-in; cached messages auto-expire via a MongoDB TTL index; saved items expire per user retention; `/privacy purge` deletes everything about a user.
-
-## Stickers
-
-Reply to a photo, GIF/video or existing sticker with `/sticker` — or send/caption the media itself with `/sticker` — to convert it into a WhatsApp sticker. Images are padded to a square transparent WebP; video/GIF clips (capped at 10 seconds) become an animated WebP via `ffmpeg`. Requires the `ffmpeg` binary (included in the Docker image) and the `sharp` package (installed automatically). View-once media is refused, same as `/save`.
-The pack name and author shown under the sticker come from `STICKER_PACK_NAME`/`STICKER_PACK_AUTHOR` (default to the bot name); embedding them never fails the command if it doesn't work.
-
-## Branding
-
-Set `BRAND_IMAGE_PATH` to a local `.png`/`.jpg`/`.webp` file to attach it to every command reply. Short replies (≤1000 characters) become a single image+caption message; longer replies (e.g. `/menu`) get the image first, then the full text as a normal message, so nothing is ever truncated. Leave it unset for plain-text replies (the default). A missing or unreadable file logs a warning and falls back to plain text rather than failing startup.
+- `,delete` and `,settings` are owner-only on every call; owner status cannot be set through the database.
+- Per-sender rate limiting with escalation to a temporary mute, so `,sticker`'s `ffmpeg` work can't be used to spam the process.
+- Minimal collection: nothing is captured unless monitoring is on, that's always disclosed in-chat, cached messages auto-expire via a MongoDB TTL index or a retention sweep, and `,delete off` wipes everything immediately.
 
 ## Development
 
 ```bash
-npm test          # 100+ tests: routing, permissions, DB, privacy rules, reconnect logic, error handling
+npm test          # node:test: command routing, permissions, DB, monitoring behaviour,
+                   # reconnect logic, error handling, real sticker conversions
 npm run check     # syntax check of all files
 npm run auth:reset -- --yes   # forget the WhatsApp session (forces a new QR)
 ```
 
 ### Verification status
 
-Verified in this repository: dependencies install from a clean lockfile (including `npm ci --omit=dev`); the full test suite passes against a real `mongod`; the real process boots, connects to MongoDB, serves `/healthz` + `/readyz`, receives a real QR code from WhatsApp's servers, and shuts down cleanly on `SIGTERM`.
+Verified in this repository: dependencies install from a clean lockfile (including `npm ci --omit=dev`); the full test suite passes against a real `mongod`, including real `sharp`/`ffmpeg` sticker conversions (static and animated); the real process boots, connects to MongoDB, serves `/healthz` + `/readyz`, receives a real QR code from WhatsApp's servers, and shuts down cleanly on `SIGTERM`.
 
-**Not verified here:** scanning the QR with a phone and exchanging live messages (requires a human with a WhatsApp account), and building the Docker image (no Docker daemon was available in the build environment). The Dockerfile uses only `npm ci`, a non-root user and a Node HEALTHCHECK, and its production-install steps were reproduced manually.
+**Not verified here:** scanning the QR with a phone and exchanging live messages (requires a human with a WhatsApp account), and building the Docker image (no Docker daemon was available in the build environment).

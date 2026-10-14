@@ -38,11 +38,6 @@ export async function connectDatabase({ uri, dbName }, logger, { retries = 5, de
 
 export async function ensureIndexes(db) {
   await Promise.all([
-    db.collection('items').createIndexes([
-      { key: { userJid: 1, seq: 1 }, unique: true },
-      { key: { userJid: 1, type: 1, createdAt: -1 } },
-      { key: { expiresAt: 1 }, sparse: true },
-    ]),
     // Message cache is short-lived by design: MongoDB drops documents when expiresAt passes.
     db.collection('message_cache').createIndexes([
       { key: { chatJid: 1, msgId: 1 }, unique: true },

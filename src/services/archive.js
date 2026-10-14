@@ -1,67 +1,42 @@
 import { describeMessage } from '../utils/message.js';
-import { isGroupJid } from '../utils/jid.js';
+import { isGroupJid, isPnJid } from '../utils/jid.js';
 
 /**
- * Pure authorisation rule for switching archiving on/off in a chat.
- *  - The owner may configure any chat (a visible notice is always posted in the chat).
- *  - Anyone else may only configure their own one-to-one chat with the bot account.
- *  - Nobody but the owner can enable archiving in a group.
- */
-export function canConfigureArchive({ isOwner, isGroup, senderCandidates, chatJids }) {
-  if (isOwner) return true;
-  if (isGroup) return false;
-  return senderCandidates.some((c) => chatJids.includes(c));
-}
-
-/**
- * Records messages from archived chats so deletions can be described later.
- * Nothing is recorded unless a chat was explicitly switched on; message bodies are only kept in
- * `full` mode, when the sender has not opted out, and when ALLOW_CONTENT_LOGGING is true.
- * View-once content and media bytes are never stored.
+ * Captures messages while deleted-message monitoring (RuntimeSettings#defaultArchiveMode, toggled
+ * with ,delete) is on, so a later deletion can be described. Monitoring is a single global switch;
+ * a chat still gets a one-time visible notice the first time a message is captured there — nothing
+ * is ever recorded from a chat that was not told monitoring is happening. Message bodies are only
+ * kept in `full`/`media` mode and when ALLOW_CONTENT_LOGGING allows it; view-once content and
+ * media bytes outside `media` mode are never stored.
  */
 export class ArchiveService {
-  constructor({ config, repos, logger, client, mediaStore, settings, ownerJid }) {
+  constructor({ config, repos, logger, client, mediaStore, settings }) {
     this.client = client;
     this.mediaStore = mediaStore;
     this.config = config;
     this.repos = repos;
     this.logger = logger;
     this.settings = settings;
-    this.ownerJid = ownerJid ?? null; // used only when defaultArchiveTarget is 'dm'
   }
 
   async record({ msg, chatJids, senderJid }) {
-    // The same chat can be addressed by phone-number JID or LID: honour whichever form was configured.
-    let chatJid = null;
-    let mode = 'off';
-    let explicit = true;
-    for (const candidate of chatJids) {
-      const raw = await this.repos.chats.archiveMode(candidate);
-      const effective = raw ?? this.settings.defaultArchiveMode; // the live, runtime-toggleable default (see /delete)
-      if (effective !== 'off') {
-        chatJid = candidate;
-        mode = effective;
-        explicit = raw !== null;
-        break;
-      }
-    }
-    if (!chatJid) return { stored: false, reason: 'chat-not-archived' };
+    const mode = this.settings.defaultArchiveMode; // single global switch, live (see ,delete)
+    if (mode === 'off') return { stored: false, reason: 'monitoring-off' };
+
+    if (!chatJids.length) return { stored: false, reason: 'no-chat' };
+    // Prefer the phone-number form as the canonical/displayed chat id when both are known (a LID
+    // like "9988@lid" is far less readable in a notification than "+15551234567").
+    const chatJid = chatJids.find(isPnJid) ?? chatJids[0];
     const chatAlt = chatJids.find((j) => j !== chatJid) ?? null;
 
-    // First message in a chat that is archiving only because of the live default (DEFAULT_ARCHIVE_MODE
-    // or /delete on), not an explicit per-chat setting: persist an explicit record (so this only
-    // happens once) and post the same visible notice a manual /privacy archive command would —
-    // nothing here is ever silent to the chat, regardless of where recovered content ends up.
-    if (!explicit) {
-      const isGroup = isGroupJid(chatJid);
-      const toDm = this.settings.defaultArchiveTarget === 'dm' && this.ownerJid;
-      const notifyJid = toDm ? this.ownerJid : chatJid;
-      const where = toDm ? 'sent privately to the bot owner, not shown in this chat' : 'shown back here, in this chat';
-      await this.repos.chats.setArchive(chatJid, { mode, enabledBy: null, notifyJid, isGroup });
+    // First message captured in this chat since monitoring last turned on: tell the chat, once.
+    const alreadyMonitored = (await Promise.all(chatJids.map((j) => this.repos.chats.isMonitored(j)))).some(Boolean);
+    if (!alreadyMonitored) {
+      await this.repos.chats.markMonitored(chatJid, { isGroup: isGroupJid(chatJid) });
       try {
-        await this.client.sendText(chatJid, `${this.noticeFor(mode, this.config.privacy.cacheTtlHours)}\n\n_(turned on automatically — deleted messages will be ${where})_`);
+        await this.client.sendText(chatJid, this.noticeFor(mode, this.config.privacy.cacheTtlHours));
       } catch (err) {
-        this.logger.warn({ err: err.message }, 'failed to post default-archiving notice');
+        this.logger.warn({ err: err.message }, 'failed to post monitoring-activation notice');
       }
     }
 
@@ -70,20 +45,14 @@ export class ArchiveService {
 
     let contentStored = false;
     let reason = null;
-    let optedOut = false;
     if (info.viewOnce) reason = 'view-once content is never stored';
-    else if (mode === 'meta') reason = 'chat archive mode is metadata-only';
+    else if (mode === 'meta') reason = 'monitoring mode is metadata-only';
     else if (!this.config.privacy.allowContentLogging) reason = 'content logging disabled by operator';
-    else {
-      const sender = await this.repos.users.get(senderJid);
-      optedOut = sender?.prefs.contentLogging === false;
-      if (optedOut) reason = 'sender opted out of content logging';
-      else contentStored = Boolean(info.text);
-    }
+    else contentStored = Boolean(info.text);
 
     let mediaFile = null;
     if (info.hasMedia && !reason) {
-      if (mode !== 'media') reason = 'media files are not retained in this archive mode';
+      if (mode !== 'media') reason = 'media files are not retained in this mode';
       else if (!this.config.privacy.allowMediaCaching) reason = 'media caching disabled by operator';
       else if (!info.size || info.size > this.config.media.maxBytes) reason = 'media is larger than the size limit';
       else {
@@ -95,12 +64,12 @@ export class ArchiveService {
             mediaFile = { path: saved.path, kind: info.kind, mimetype: info.mimetype, fileName: info.fileName, size: saved.size };
           }
         } catch (err) {
-          this.logger.warn({ err: err.message }, 'could not cache media of archived chat');
+          this.logger.warn({ err: err.message }, 'could not cache media for deletion recovery');
           reason = 'media could not be downloaded';
         }
       }
-    } else if (info.hasMedia && reason === 'chat archive mode is metadata-only') {
-      reason = 'media files are not retained in this archive mode';
+    } else if (info.hasMedia && reason === 'monitoring mode is metadata-only') {
+      reason = 'media files are not retained in this mode';
     }
     if (!reason && !contentStored && !mediaFile) reason = 'no text content';
 
@@ -121,31 +90,23 @@ export class ArchiveService {
     return { stored: true, contentStored, mediaStored: Boolean(mediaFile), reason };
   }
 
-  /** Enables/disables archiving. Turning it off wipes the chat's cache, including cached files. */
-  async setMode({ chatJid, mode, enabledBy, notifyJid }) {
-    const isGroup = isGroupJid(chatJid);
-    await this.repos.chats.setArchive(chatJid, { mode, enabledBy, notifyJid, isGroup });
-    if (mode === 'off') {
-      const files = await this.repos.messageCache.mediaPathsForChat(chatJid);
-      const removed = await this.repos.messageCache.deleteForChat(chatJid);
-      await this.mediaStore.removeMany(files);
-      return { removed };
-    }
-    return { removed: 0 };
+  /** Turns monitoring fully off: no chat stays "monitored", and every cached message/file is wiped. */
+  async disableAndWipe() {
+    const { mediaPaths } = await this.repos.messageCache.clearAll();
+    await this.mediaStore.removeMany(mediaPaths);
+    await this.repos.chats.clearAll();
   }
 
   noticeFor(mode, ttlHours) {
-    if (mode === 'off') return '🛑 Message archiving is now *OFF* for this chat. Cached messages and files were deleted.';
     const what = {
       meta: 'only basic details (sender, time, type) — no message text and no files',
       full: 'message *text* and basic details (sender, time, type) — no files',
       media: 'message *text*, basic details, and *photos, videos, stickers, audio and documents* (size-limited, encrypted)',
     }[mode];
     return [
-      `📦 Message archiving is now *ON (${mode})* for this chat.`,
-      `The bot keeps ${what} of messages it receives here for ${ttlHours}h, solely to recover a deleted message's content.`,
+      `📦 Deleted-message monitoring is now *ON (${mode})* for this chat.`,
+      `The bot keeps ${what} of messages it receives here for ${ttlHours}h, solely to recover a deleted message's content. It notifies the bot owner privately when a message here is deleted.`,
       'View-once content is never stored.',
-      'Anyone can opt out of capture with the "logging off" option of the privacy command, or turn the chat off with "archive off".',
     ].join('\n');
   }
 }

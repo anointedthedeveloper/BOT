@@ -29,15 +29,9 @@ test('connectDatabase fails with a clear error when the server is unreachable', 
   );
 });
 
-test('users: ensure creates defaults, prefs merge, bans and roles', async () => {
+test('users: ensure creates defaults, bans and roles', async () => {
   const u = await repos.users.ensure(U);
   assert.equal(u.role, 'user');
-  assert.equal(u.prefs.retentionDays, 30);
-  assert.equal(u.prefs.contentLogging, true);
-  await repos.users.setPref(U, 'timezone', 'Africa/Lagos');
-  assert.equal((await repos.users.get(U)).prefs.timezone, 'Africa/Lagos');
-  await repos.users.resetPrefs(U);
-  assert.equal((await repos.users.get(U)).prefs.timezone, 'UTC');
   await repos.users.setBanned(U, true, 'spam');
   assert.equal((await repos.users.get(U)).banned, true);
   assert.equal((await repos.users.get(U)).banReason, 'spam');
@@ -48,79 +42,30 @@ test('users: ensure creates defaults, prefs merge, bans and roles', async () => 
   assert.equal(await repos.users.get('nobody@s.whatsapp.net'), null);
 });
 
-test('items: sequence numbers are unique under concurrency', async () => {
-  const jid = '15553330000@s.whatsapp.net';
-  const created = await Promise.all(Array.from({ length: 25 }, (_, i) => repos.items.create(jid, { type: 'note', text: `n${i}` })));
-  const seqs = created.map((c) => c.seq).sort((a, b) => a - b);
-  assert.deepEqual(seqs, Array.from({ length: 25 }, (_, i) => i + 1));
-});
-
-test('items: encrypted at rest, decrypted on read, searchable', async () => {
-  const jid = '15553330001@s.whatsapp.net';
-  const note = await repos.items.create(jid, { type: 'note', text: 'Buy oat MILK tomorrow #shopping', tags: ['shopping'] });
-  await repos.items.create(jid, { type: 'bookmark', note: 'receipt', ref: { chatJid: 'c', msgId: 'm', kind: 'image', excerpt: 'Invoice 42 from ACME' } });
-  const raw = await database.db.collection('items').findOne({ userJid: jid, seq: note.seq });
-  assert.ok(raw.text.startsWith('enc:v1:'));
-  assert.ok(!JSON.stringify(raw).includes('oat'));
-
-  assert.equal((await repos.items.get(jid, note.seq)).text, 'Buy oat MILK tomorrow #shopping');
-  assert.equal((await repos.items.get(jid, note.seq, 'bookmark')), null, 'type filter');
-
-  const hit = await repos.items.search(jid, { terms: ['milk', 'oat'] });
-  assert.equal(hit.length, 1);
-  assert.equal(hit[0].item.seq, note.seq);
-  assert.equal((await repos.items.search(jid, { terms: ['milk', 'banana'] })).length, 0);
-  assert.equal((await repos.items.search(jid, { terms: ['acme'] })).length, 1, 'searches bookmark excerpts');
-  assert.equal((await repos.items.search(jid, { tag: 'Shopping' })).length, 1);
-  assert.equal((await repos.items.search(jid, { terms: ['receipt'], type: 'note' })).length, 0);
-});
-
-test('items: users cannot see or delete each other\'s items', async () => {
-  const a = '15554440001@s.whatsapp.net';
-  const b = '15554440002@s.whatsapp.net';
-  const item = await repos.items.create(a, { type: 'note', text: 'private to a' });
-  assert.equal(await repos.items.get(b, item.seq), null);
-  assert.equal(await repos.items.delete(b, item.seq), null);
-  assert.equal((await repos.items.search(b, { terms: ['private'] })).length, 0);
-  assert.ok(await repos.items.get(a, item.seq));
-});
-
-test('items: retention sweep removes only expired items and reports media paths', async () => {
-  const jid = '15555550001@s.whatsapp.net';
-  const now = new Date('2030-01-01T00:00:00Z');
-  const old = await repos.items.create(jid, { type: 'saved', text: 'old', media: { path: 'x/y', kind: 'image', size: 1 }, retentionDays: 1 });
-  const keep = await repos.items.create(jid, { type: 'note', text: 'forever', retentionDays: 0 });
-  const later = await repos.items.create(jid, { type: 'note', text: 'later', retentionDays: 5000 });
-  const res = await repos.items.deleteExpired(now);
-  assert.equal(res.removed >= 1, true);
-  assert.ok(res.mediaPaths.includes('x/y'));
-  assert.equal(await repos.items.get(jid, old.seq), null);
-  assert.ok(await repos.items.get(jid, keep.seq));
-  assert.ok(await repos.items.get(jid, later.seq));
-});
-
-test('items: deleteAllForUser and exportAll', async () => {
-  const jid = '15556660001@s.whatsapp.net';
-  await repos.items.create(jid, { type: 'note', text: 'a' });
-  await repos.items.create(jid, { type: 'saved', text: 'b', media: { path: 'm/1', kind: 'image', size: 3, fileName: 'f.png' } });
-  const exp = await repos.items.exportAll(jid);
-  assert.equal(exp.length, 2);
-  assert.equal(exp[1].media.fileName, 'f.png');
-  assert.ok(!('path' in exp[1].media), 'export never leaks storage paths');
-  assert.deepEqual(await repos.items.deleteAllForUser(jid), ['m/1']);
-  assert.equal(await repos.items.count(jid), 0);
-});
-
-test('chats: archive mode is unset (null) until explicitly configured, validates, caches and invalidates', async () => {
+test('chats: isMonitored is false until markMonitored, true after, cleared by clearAll', async () => {
   const chat = '120363111@g.us';
-  assert.equal(await repos.chats.archiveMode(chat), null);
-  await repos.chats.setArchive(chat, { mode: 'full', enabledBy: U, isGroup: true });
-  assert.equal(await repos.chats.archiveMode(chat), 'full');
-  assert.equal((await repos.chats.get(chat)).archive.notifyJid, chat);
-  assert.equal((await repos.chats.listArchivedBy(U)).length >= 1, true);
-  await assert.rejects(() => repos.chats.setArchive(chat, { mode: 'everything', enabledBy: U }), /Invalid archive mode/);
-  await repos.chats.setArchive(chat, { mode: 'off' });
-  assert.equal(await repos.chats.archiveMode(chat), 'off');
+  assert.equal(await repos.chats.isMonitored(chat), false);
+  await repos.chats.markMonitored(chat, { isGroup: true });
+  assert.equal(await repos.chats.isMonitored(chat), true);
+  assert.equal((await repos.chats.get(chat)).isGroup, true);
+  assert.equal(await repos.chats.countMonitored(), 1);
+
+  const dm = '15559990000@s.whatsapp.net';
+  await repos.chats.markMonitored(dm, { isGroup: false });
+  assert.equal(await repos.chats.countMonitored(), 2);
+
+  await repos.chats.clearAll();
+  assert.equal(await repos.chats.isMonitored(chat), false);
+  assert.equal(await repos.chats.isMonitored(dm), false);
+  assert.equal(await repos.chats.countMonitored(), 0);
+});
+
+test('chats: get() caches briefly, and markMonitored invalidates the cache', async () => {
+  const chat = '120363333@g.us';
+  assert.equal(await repos.chats.isMonitored(chat), false);
+  await repos.chats.markMonitored(chat, { isGroup: true });
+  // Without cache invalidation this would still read the stale (pre-mark) cached doc.
+  assert.equal(await repos.chats.isMonitored(chat), true);
 });
 
 test('message cache: TTL index, encryption, lookup by alt jid, removal', async () => {
@@ -145,7 +90,26 @@ test('message cache: TTL index, encryption, lookup by alt jid, removal', async (
 
   await repos.messageCache.remove(['99@lid'], 'M1');
   assert.equal(await repos.messageCache.find(['99@lid'], 'M1'), null);
-  assert.equal(await repos.messageCache.deleteForSender(U), 1);
+});
+
+test('message cache: clearAll wipes everything and returns media file paths to delete', async () => {
+  await repos.messageCache.record({ chatJid: 'wipe1', msgId: 'W1', senderJid: U, timestamp: 1, kind: 'text', text: 'a', contentStored: true });
+  await repos.messageCache.record({ chatJid: 'wipe2', msgId: 'W2', senderJid: U, timestamp: 1, kind: 'image', contentStored: false, mediaFile: { path: 'p/1', kind: 'image', size: 3 } });
+  const { removed, mediaPaths } = await repos.messageCache.clearAll();
+  assert.ok(removed >= 2);
+  assert.deepEqual(mediaPaths, ['p/1']);
+  assert.equal(await repos.messageCache.find(['wipe1'], 'W1'), null);
+  assert.equal(await repos.messageCache.find(['wipe2'], 'W2'), null);
+});
+
+test('message cache: deleteExpiredMedia only sweeps media docs past their sweepAt', async () => {
+  const now = new Date('2030-01-01T00:00:00Z');
+  await database.db.collection('message_cache').insertOne({ chatJid: 'c1', msgId: 'E1', mediaFile: { path: 'old/1' }, sweepAt: new Date(now.getTime() - 1000) });
+  await database.db.collection('message_cache').insertOne({ chatJid: 'c1', msgId: 'E2', mediaFile: { path: 'fresh/1' }, sweepAt: new Date(now.getTime() + 1_000_000) });
+  const res = await repos.messageCache.deleteExpiredMedia(now);
+  assert.equal(res.removed, 1);
+  assert.deepEqual(res.mediaPaths, ['old/1']);
+  assert.ok(await database.db.collection('message_cache').findOne({ msgId: 'E2' }));
 });
 
 test('bot config overrides persist', async () => {
@@ -177,18 +141,4 @@ test('mongo auth state: creds and keys survive a reload and are encrypted at res
   assert.equal((await b.state.keys.get('pre-key', ['1']))['1'], null);
   await b.clear();
   assert.equal(await database.db.collection('auth_a').countDocuments(), 0);
-});
-
-test('chats: archiveMode returns null until configured; isExplicitlyConfigured distinguishes "never set" from "set"', async () => {
-  const chat = '120363222@g.us';
-  assert.equal(await repos.chats.archiveMode(chat), null);
-  assert.equal(await repos.chats.isExplicitlyConfigured(chat), false);
-
-  await repos.chats.setArchive(chat, { mode: 'media', enabledBy: null, notifyJid: U, isGroup: true });
-  assert.equal(await repos.chats.isExplicitlyConfigured(chat), true);
-  assert.equal(await repos.chats.archiveMode(chat), 'media');
-
-  await repos.chats.setArchive(chat, { mode: 'off' });
-  assert.equal(await repos.chats.archiveMode(chat), 'off', 'an explicit off is itself an explicit value, not a fallback');
-  assert.equal(await repos.chats.isExplicitlyConfigured(chat), true);
 });

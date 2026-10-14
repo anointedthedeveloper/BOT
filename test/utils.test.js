@@ -5,8 +5,6 @@ import { normalizeJid, resolveSender, parseUserInput, maskJid, isGroupJid, isIgn
 import { describeMessage, parseCommand, getQuoted, unwrapMessage } from '../src/utils/message.js';
 import { splitArgs, extractTags, scoreMatch } from '../src/utils/text.js';
 import { chunkText } from '../src/services/whatsapp.js';
-import { SETTINGS_SCHEMA, parseRetentionDays } from '../src/utils/prefs.js';
-import { UserError } from '../src/utils/errors.js';
 
 test('jid helpers', () => {
   assert.equal(normalizeJid('1555:12@s.whatsapp.net'), '1555@s.whatsapp.net');
@@ -80,18 +78,6 @@ test('chunkText splits long messages without losing content', () => {
   assert.equal(chunkText('x'.repeat(2500), 1000).join(''), 'x'.repeat(2500));
 });
 
-test('prefs validation', () => {
-  assert.equal(SETTINGS_SCHEMA.notifyDeletes.parse('off'), false);
-  assert.throws(() => SETTINGS_SCHEMA.notifyDeletes.parse('maybe'), UserError);
-  assert.equal(SETTINGS_SCHEMA.timezone.parse('Africa/Lagos'), 'Africa/Lagos');
-  assert.throws(() => SETTINGS_SCHEMA.timezone.parse('Mars/Base'), UserError);
-  assert.equal(parseRetentionDays('0', 365), 0);
-  assert.equal(parseRetentionDays('off', 365), 0);
-  assert.equal(parseRetentionDays('14', 365), 14);
-  assert.throws(() => parseRetentionDays('9999', 365), UserError);
-  assert.throws(() => parseRetentionDays('-1', 365), UserError);
-  assert.throws(() => parseRetentionDays('1.5', 365), UserError);
-});
 
 test('cipher: round trip, tamper detection, passthrough without key', () => {
   const c = createCipherBox(Buffer.alloc(32, 1));

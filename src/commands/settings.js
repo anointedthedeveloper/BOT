@@ -1,38 +1,65 @@
 import { UserError } from '../utils/errors.js';
-import { SETTINGS_SCHEMA } from '../utils/prefs.js';
 
 export default {
   name: 'settings',
-  aliases: ['prefs', 'preferences'],
-  category: 'Privacy & settings',
-  description: 'Manage personal preferences',
-  usage: 'settings [set <key> <value> | reset]',
-  details: 'Keys: {p}settings shows them all.\nData-retention options live under {p}privacy.',
+  category: 'Settings',
+  description: 'Manage bot features',
+  usage: 'settings [delete on|off | sticker on|off | status]',
+  role: 'owner',
+  details: [
+    '{p}settings — compact overview of what\'s on.',
+    '{p}settings delete on|off — same switch as {p}delete on|off.',
+    '{p}settings sticker on|off — enable or disable the {p}sticker command.',
+    '{p}settings status — current values.',
+  ].join('\n'),
   async execute(ctx) {
-    const { users } = ctx.deps;
-    const [sub, key, ...value] = ctx.args;
+    const { settings, config, archive } = ctx.deps;
+    const [sub, arg] = ctx.args.map((a) => a.toLowerCase());
+
+    const summary = () => {
+      const mode = settings.defaultArchiveMode;
+      return [
+        `• delete: *${mode === 'off' ? 'OFF' : `ON (${mode})`}*`,
+        `• sticker: *${settings.stickerEnabled ? 'ENABLED' : 'DISABLED'}*`,
+      ].join('\n');
+    };
 
     if (!sub) {
-      const p = ctx.user.prefs;
       return ctx.reply([
-        '*Your settings*',
-        ...Object.entries(SETTINGS_SCHEMA).map(([k, s]) => `• *${k}*: ${p[k]}\n   _${s.description}_`),
+        '*Settings*',
+        summary(),
         '',
-        `Change with ${ctx.prefix}settings set <key> <value>. Storage & logging options: ${ctx.prefix}privacy.`,
+        `${ctx.prefix}settings delete on|off`,
+        `${ctx.prefix}settings sticker on|off`,
+        `${ctx.prefix}settings status`,
       ].join('\n'));
     }
-    if (sub === 'reset') {
-      await users.resetPrefs(ctx.sender.jid);
-      return ctx.reply('Settings reset to defaults.');
+    if (sub === 'status') {
+      return ctx.reply(['*Current settings*', summary()].join('\n'));
     }
-    if (sub === 'set') {
-      const schema = SETTINGS_SCHEMA[key];
-      if (!schema) throw new UserError(`Unknown setting. Available: ${Object.keys(SETTINGS_SCHEMA).join(', ')}.`);
-      if (!value.length) throw new UserError(`Usage: ${ctx.prefix}settings set ${key} <value>`);
-      const parsed = schema.parse(value.join(' '));
-      await users.setPref(ctx.sender.jid, key, parsed);
-      return ctx.reply(`✅ ${key} = ${parsed}`);
+    if (sub === 'delete') {
+      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${ctx.prefix}settings delete on|off`);
+      if (arg === 'on') {
+        if (!config.privacy.allowMediaCaching && !config.privacy.allowContentLogging) {
+          throw new UserError('The operator has disabled both content and media logging, so there is nothing this can turn on.');
+        }
+        const mode = config.privacy.allowMediaCaching ? 'media' : 'full';
+        try {
+          await settings.setDefaultArchiveMode(mode);
+        } catch (e) {
+          throw new UserError(e.message);
+        }
+        return ctx.reply(`✅ delete: ON (${mode}).`);
+      }
+      await settings.setDefaultArchiveMode('off');
+      await archive.disableAndWipe();
+      return ctx.reply('✅ delete: OFF. Cached data wiped.');
     }
-    throw new UserError(`Usage: ${ctx.prefix}settings [set <key> <value> | reset]`);
+    if (sub === 'sticker') {
+      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${ctx.prefix}settings sticker on|off`);
+      await settings.setStickerEnabled(arg === 'on');
+      return ctx.reply(`✅ sticker: ${arg === 'on' ? 'ENABLED' : 'DISABLED'}.`);
+    }
+    throw new UserError(`Usage: ${ctx.prefix}${this.usage}`);
   },
 };

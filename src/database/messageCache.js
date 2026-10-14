@@ -44,16 +44,6 @@ export class MessageCacheRepository {
     await this.col.deleteOne({ msgId, $or: [{ chatJid: { $in: ids } }, { chatAlt: { $in: ids } }] });
   }
 
-  async mediaPathsForChat(chatJid) {
-    const docs = await this.col.find({ $or: [{ chatJid }, { chatAlt: chatJid }], mediaFile: { $ne: null } }, { projection: { mediaFile: 1 } }).toArray();
-    return docs.map((d) => d.mediaFile.path);
-  }
-
-  async mediaPathsForSender(senderJid) {
-    const docs = await this.col.find({ senderJid, mediaFile: { $ne: null } }, { projection: { mediaFile: 1 } }).toArray();
-    return docs.map((d) => d.mediaFile.path);
-  }
-
   /** Removes cached messages whose media file is past its lifetime; returns the file paths to delete. */
   async deleteExpiredMedia(now = this.now()) {
     const docs = await this.col.find({ sweepAt: { $lte: now } }, { projection: { mediaFile: 1 } }).toArray();
@@ -62,13 +52,11 @@ export class MessageCacheRepository {
     return { removed: docs.length, mediaPaths: docs.map((d) => d.mediaFile?.path).filter(Boolean) };
   }
 
-  async deleteForChat(chatJid) {
-    return (await this.col.deleteMany({ $or: [{ chatJid }, { chatAlt: chatJid }] })).deletedCount;
-  }
-
-  /** Removes everything cached for messages sent by one person (used by /privacy purge). */
-  async deleteForSender(senderJid) {
-    return (await this.col.deleteMany({ senderJid })).deletedCount;
+  /** Wipes every cached message (used when monitoring is turned off entirely); returns media file paths to delete. */
+  async clearAll() {
+    const docs = await this.col.find({ mediaFile: { $ne: null } }, { projection: { mediaFile: 1 } }).toArray();
+    const removed = await this.col.deleteMany({});
+    return { removed: removed.deletedCount, mediaPaths: docs.map((d) => d.mediaFile?.path).filter(Boolean) };
   }
 
   count() {

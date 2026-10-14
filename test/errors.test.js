@@ -16,7 +16,7 @@ const register = (h, name, execute) => h.deps.registry.register({ name, descript
 test('unexpected command errors: friendly reply with reference, logged, owner notified once', async () => {
   const h = await boot();
   register(h, 'boom', () => { throw new Error('database exploded: secret-detail'); });
-  await h.say(ALICE, '/boom');
+  await h.say(ALICE, ',boom');
   const reply = h.lastText(ALICE);
   assert.match(reply, /Something went wrong\. Reference: [a-z0-9]{4,}/);
   assert.doesNotMatch(reply, /exploded|secret-detail/, 'internal details never reach the user');
@@ -28,7 +28,7 @@ test('unexpected command errors: friendly reply with reference, logged, owner no
   assert.ok(ownerMsgs[0].includes(ref));
   assert.match(ownerMsgs[0], /command:boom/);
 
-  await h.say(ALICE, '/boom');
+  await h.say(ALICE, ',boom');
   assert.equal(h.sock.texts(OWNER_JID).length, 1, 'same error is de-duplicated');
   assert.equal(h.deps.errorReporter.total, 2);
 });
@@ -36,7 +36,7 @@ test('unexpected command errors: friendly reply with reference, logged, owner no
 test('UserError is shown to the user and is not reported as a bug', async () => {
   const h = await boot();
   register(h, 'strict', () => { throw new UserError('Please provide a thing.'); });
-  await h.say(ALICE, '/strict');
+  await h.say(ALICE, ',strict');
   assert.equal(h.lastText(ALICE), '⚠️ Please provide a thing.');
   assert.equal(h.deps.errorReporter.total, 0);
   assert.equal(h.sock.texts(OWNER_JID).length, 0);
@@ -45,18 +45,20 @@ test('UserError is shown to the user and is not reported as a bug', async () => 
 test('a failing reply does not crash the pipeline; later messages still work', async () => {
   const h = await boot();
   register(h, 'boom2', () => { throw new Error('x'); });
+  register(h, 'pingtest', (ctx) => ctx.reply('Pong'));
   const original = h.sock.sendMessage.bind(h.sock);
   h.sock.sendMessage = async () => { throw new Error('socket closed'); };
-  await h.say(ALICE, '/boom2'); // must not throw
+  await h.say(ALICE, ',boom2'); // must not throw
   h.sock.sendMessage = original;
-  await h.say(ALICE, '/ping');
+  await h.say(ALICE, ',pingtest');
   assert.match(h.lastText(ALICE), /Pong/);
 });
 
 test('archive failures are reported but do not block commands', async () => {
   const h = await boot();
+  register(h, 'pingtest', (ctx) => ctx.reply('Pong'));
   h.deps.archive.record = async () => { throw new Error('mongo hiccup'); };
-  await h.say(ALICE, '/ping');
+  await h.say(ALICE, ',pingtest');
   assert.match(h.lastText(ALICE), /Pong/);
   assert.equal(h.deps.errorReporter.total, 1);
 });
@@ -70,9 +72,10 @@ test('malformed events never throw out of the handler', async () => {
 
 test('a deletion notice that cannot be sent is logged, not thrown', async () => {
   const h = await boot();
-  await h.say(OWNER_JID, '/privacy archive full', { group: true });
+  await h.say(OWNER_JID, ',delete on');
+  await h.say(ALICE, 'hello', { group: true }); // activates monitoring for the group
   h.sock.sendMessage = async () => { throw new Error('offline'); };
-  const results = await h.deps.deletions.handleUpdates([{ key: { remoteJid: h.deps.config && '120363000000000001@g.us', id: 'GONE' }, update: { messageStubType: 1 } }]);
+  const results = await h.deps.deletions.handleUpdates([{ key: { remoteJid: '120363000000000001@g.us', id: 'GONE' }, update: { messageStubType: 1 } }]);
   assert.equal(results[0].notified, false);
   assert.match(results[0].error, /offline/);
 });
@@ -110,24 +113,21 @@ test('ErrorReporter survives a failing notifier and honours the disable flag', a
   assert.equal(off.recent[0].message, 'string error');
 });
 
-test('retention job deletes expired items and their media files, and reports errors', async () => {
+test('retention job deletes cached media past its lifetime, and reports errors', async () => {
   const h = await boot();
-  await h.say(ALICE, '/privacy retention 1');
-  const stored = await h.deps.mediaStore.save(ALICE, Buffer.from('file'));
-  const expired = await h.deps.items.create(ALICE, { type: 'saved', text: 'old', media: { path: stored.path, kind: 'document', size: 4 }, retentionDays: 1 });
-  await h.deps.items.col.updateOne({ seq: expired.seq, userJid: ALICE }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
-  const keep = await h.deps.items.create(ALICE, { type: 'note', text: 'fresh', retentionDays: 1 });
+  const stored = await h.deps.mediaStore.save('cache:x', Buffer.from('file'));
+  await h.deps.messageCache.record({ chatJid: 'c1', msgId: 'EXP1', senderJid: ALICE, timestamp: 1, kind: 'image', contentStored: false, mediaFile: { path: stored.path, kind: 'image', size: stored.size } });
+  await h.deps.messageCache.col.updateOne({ msgId: 'EXP1' }, { $set: { sweepAt: new Date(Date.now() - 1000) } });
 
-  const job = startRetentionJob({ items: h.deps.items, mediaStore: h.deps.mediaStore, logger: { info() {}, warn() {} }, intervalMs: 3_600_000 });
+  const job = startRetentionJob({ messageCache: h.deps.messageCache, mediaStore: h.deps.mediaStore, logger: { info() {}, warn() {} }, intervalMs: 3_600_000 });
   const res = await job.runOnce();
   job.stop();
   assert.equal(res.removed, 1);
-  assert.equal(await h.deps.items.get(ALICE, expired.seq), null);
-  assert.ok(await h.deps.items.get(ALICE, keep.seq));
+  assert.equal(await h.deps.messageCache.find(['c1'], 'EXP1'), null);
   await assert.rejects(() => access(path.join(h.config.media.dir, stored.path)));
 
   const errors = [];
-  const bad = startRetentionJob({ items: { deleteExpired: async () => { throw new Error('db down'); } }, mediaStore: h.deps.mediaStore, logger: { info() {} }, intervalMs: 3_600_000, onError: (e, c) => errors.push([e.message, c.scope]) });
+  const bad = startRetentionJob({ messageCache: { deleteExpiredMedia: async () => { throw new Error('db down'); } }, mediaStore: h.deps.mediaStore, logger: { info() {} }, intervalMs: 3_600_000, onError: (e, c) => errors.push([e.message, c.scope]) });
   await bad.runOnce();
   bad.stop();
   assert.deepEqual(errors, [['db down', 'retention']]);

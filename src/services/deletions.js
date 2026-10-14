@@ -1,6 +1,6 @@
 import { KIND_ICON } from '../utils/message.js';
 import { formatDate, formatBytes } from '../utils/text.js';
-import { maskJid, normalizeJid } from '../utils/jid.js';
+import { normalizeJid } from '../utils/jid.js';
 
 export const REVOKE_STUB_TYPE = 1; // proto.WebMessageInfo.StubType.REVOKE (asserted in tests)
 
@@ -9,19 +9,21 @@ export function isRevokeUpdate(u) {
 }
 
 /**
- * Turns "message revoked" events into notifications. Three distinct outcomes, never conflated:
- *   - 'original-available'  the bot had stored the text while the chat was archived
+ * Turns "message revoked" events into a private notification to the bot owner. Three distinct
+ * outcomes, never conflated:
+ *   - 'original-available'  the bot had stored the content while monitoring was on
  *   - 'metadata-only'       the bot saw the message but did not (or may not) keep its content
  *   - 'unknown-original'    the bot never received/stored the message: only the event is known
- * Chats that are not archived produce no notification at all.
+ * A chat that was never told monitoring is on produces no notification at all.
  */
 export class DeletionNotifier {
-  constructor({ repos, client, logger, mediaStore, ttlHours }) {
+  constructor({ repos, client, logger, mediaStore, ttlHours, ownerJid }) {
     this.mediaStore = mediaStore;
     this.repos = repos;
     this.client = client;
     this.logger = logger;
     this.ttlHours = ttlHours;
+    this.ownerJid = ownerJid;
   }
 
   async handleUpdates(updates) {
@@ -33,33 +35,28 @@ export class DeletionNotifier {
   async #handleOne(u) {
     const key = u.key ?? {};
     const chatJids = [normalizeJid(key.remoteJid), normalizeJid(key.remoteJidAlt)].filter(Boolean);
-    if (!chatJids.length || !key.id) return null;
+    if (!chatJids.length || !key.id || !this.ownerJid) return null;
 
-    const chat = await this.repos.chats.get(chatJids[0]) ?? (chatJids[1] ? await this.repos.chats.get(chatJids[1]) : null);
-    if (!chat?.archive || chat.archive.mode === 'off') return null; // no consent -> no notification
+    const monitored = (await Promise.all(chatJids.map((j) => this.repos.chats.isMonitored(j)))).some(Boolean);
+    if (!monitored) return null; // this chat was never told monitoring is happening -> no notification
     if (key.fromMe) return { outcome: 'self-deleted', notified: false }; // the account holder deleted it themself
-
-    const target = chat.archive.notifyJid ?? chatJids[0];
-    const enabler = await this.repos.users.get(chat.archive.enabledBy);
-    if (enabler && enabler.prefs.notifyDeletes === false) return { outcome: 'notifications-off', notified: false };
 
     const cached = await this.repos.messageCache.find(chatJids, key.id);
     const outcome = !cached ? 'unknown-original' : cached.contentStored || cached.mediaFile ? 'original-available' : 'metadata-only';
-    const tz = enabler?.prefs.timezone ?? 'UTC';
-    const text = this.#format(outcome, cached, key, chatJids[0], tz);
+    const text = this.#format(outcome, cached, key, chatJids[0]);
 
     try {
-      await this.client.sendText(target, text);
+      await this.client.sendText(this.ownerJid, text);
     } catch (err) {
       this.logger.warn({ err: err.message, outcome }, 'failed to send deletion notification');
       return { outcome, notified: false, error: err.message };
     }
-    if (cached?.mediaFile) await this.#resendMedia(target, cached);
+    if (cached?.mediaFile) await this.#resendMedia(this.ownerJid, cached);
     if (cached) {
       await this.repos.messageCache.remove(chatJids, key.id); // delivered once; don't keep deleted content around
       if (cached.mediaFile) await this.mediaStore.remove(cached.mediaFile.path);
     }
-    this.logger.info({ outcome, chat: maskJid(chatJids[0]) }, 'deletion notification sent');
+    this.logger.info({ outcome }, 'deletion notification sent');
     return { outcome, notified: true };
   }
 
@@ -73,14 +70,14 @@ export class DeletionNotifier {
     }
   }
 
-  #format(outcome, c, key, chatJid, tz) {
+  #format(outcome, c, key, chatJid) {
     const where = chatJid.endsWith('@g.us') ? 'a group chat' : `chat with ${this.#label(chatJid)}`;
     const deletedBy = key.participant ? this.#label(key.participant) : null;
     if (outcome === 'unknown-original') {
       return [
         '🗑️ *Deleted message detected* — original NOT available',
         `A message was deleted in ${where}.`,
-        'The bot has no record of it (it was sent before archiving was enabled, was not received, or has expired), so its content cannot be shown.',
+        'The bot has no record of it (it was sent before monitoring was enabled, was not received, or has expired), so its content cannot be shown.',
         deletedBy ? `Deleted by: ${deletedBy}` : null,
       ].filter(Boolean).join('\n');
     }
@@ -88,14 +85,14 @@ export class DeletionNotifier {
       outcome === 'original-available' ? '🗑️ *Deleted message* — original content available' : '🗑️ *Deleted message detected* — content not stored',
       `Chat: ${where}`,
       `From: ${this.#label(c.senderJid)}${c.fromMe ? ' (you)' : ''}`,
-      `Sent: ${formatDate(c.timestamp * 1000, tz)}`,
+      `Sent: ${formatDate(c.timestamp * 1000, 'UTC')}`,
       `Type: ${KIND_ICON[c.kind] ?? ''} ${c.kind}${c.mediaMeta?.size ? ` (${formatBytes(c.mediaMeta.size)})` : ''}`,
       deletedBy && deletedBy !== this.#label(c.senderJid) ? `Deleted by: ${deletedBy}` : null,
     ].filter(Boolean);
     if (outcome === 'original-available') {
       const lines = [...head, ''];
-      if (c.text) lines.push('Original text (captured while this chat was archived):', c.text);
-      if (c.mediaFile) lines.push(`Original ${c.mediaFile.kind} captured while archived — sent below.`);
+      if (c.text) lines.push('Original text (captured while monitored):', c.text);
+      if (c.mediaFile) lines.push(`Original ${c.mediaFile.kind} captured while monitored — sent below.`);
       return lines.join('\n');
     }
     return [...head, `Why no content: ${c.reason ?? 'not captured'}.`].join('\n');

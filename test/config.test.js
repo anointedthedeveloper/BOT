@@ -7,7 +7,7 @@ const ok = { MONGODB_URI: 'mongodb://localhost:27017', OWNER_NUMBERS: '+1 (555) 
 test('loads defaults and normalises owners', () => {
   const c = loadConfig(ok);
   assert.deepEqual(c.owners, ['15550001111', '2348012345678']);
-  assert.equal(c.bot.prefix, '/');
+  assert.equal(c.bot.prefix, ',');
   assert.equal(c.bot.mode, 'private');
   assert.equal(c.auth.store, 'file');
   assert.equal(c.privacy.allowContentLogging, true);

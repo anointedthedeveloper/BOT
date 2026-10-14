@@ -1,7 +1,7 @@
 {
   "name": "whatsapp-utility-bot",
   "version": "1.0.0",
-  "description": "Privacy-first, modular WhatsApp utility bot (Baileys + MongoDB)",
+  "description": "WhatsApp deleted-message monitoring & sticker bot (Baileys + MongoDB)",
   "type": "module",
   "main": "src/index.js",
   "engines": {

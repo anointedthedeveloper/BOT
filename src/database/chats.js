@@ -1,9 +1,9 @@
-const ARCHIVE_MODES = ['off', 'meta', 'full', 'media'];
-
 /**
- * Per-chat consent state. A chat is archived ONLY after an authorised person switched it on.
- * `meta` records ids/sender/type (enough to say "a message was deleted"); `full` also keeps text;
- * `media` additionally keeps the (encrypted, short-lived) file of photos/videos/stickers/audio/documents.
+ * Tracks, per chat, whether deleted-message monitoring has already been announced there.
+ * Monitoring itself is a single global switch (RuntimeSettings#defaultArchiveMode, via ,delete);
+ * this repository only remembers which chats have already been told about it, so the activation
+ * notice fires once per chat per "on" period rather than on every message, and so deletion
+ * notifications are never sent for a chat that was never actually told monitoring was happening.
  */
 export class ChatsRepository {
   constructor(db, { cacheMs = 15_000, now = () => Date.now() } = {}) {
@@ -21,34 +21,23 @@ export class ChatsRepository {
     return doc;
   }
 
-  /**
-   * The chat's EXPLICITLY configured archive mode, or null if it has never been set (meaning
-   * the live default — RuntimeSettings#defaultArchiveMode — applies; callers resolve that, since
-   * it can change at runtime without touching every chat's own record).
-   */
-  async archiveMode(chatJid) {
-    return (await this.get(chatJid))?.archive?.mode ?? null;
+  /** True once this chat has been told monitoring is active (and so may have cached messages). */
+  async isMonitored(chatJid) {
+    return Boolean((await this.get(chatJid))?.monitored);
   }
 
-  /** True once someone (or the default-activation flow) has written an explicit archive setting for this chat. */
-  async isExplicitlyConfigured(chatJid) {
-    return Boolean((await this.get(chatJid))?.archive);
-  }
-
-  async setArchive(chatJid, { mode, enabledBy, notifyJid, isGroup }) {
-    if (!ARCHIVE_MODES.includes(mode)) throw new Error(`Invalid archive mode: ${mode}`);
-    const archive = mode === 'off' ? { mode } : { mode, enabledBy, notifyJid: notifyJid ?? chatJid, enabledAt: new Date() };
-    await this.col.updateOne({ _id: chatJid }, { $set: { archive, isGroup: Boolean(isGroup), updatedAt: new Date() } }, { upsert: true });
+  async markMonitored(chatJid, { isGroup } = {}) {
+    await this.col.updateOne({ _id: chatJid }, { $set: { monitored: true, isGroup: Boolean(isGroup), updatedAt: new Date() } }, { upsert: true });
     this.cache.delete(chatJid);
   }
 
-  async countArchived() {
-    return this.col.countDocuments({ 'archive.mode': { $in: ['meta', 'full', 'media'] } });
+  async countMonitored() {
+    return this.col.countDocuments({ monitored: true });
   }
 
-  async listArchivedBy(jid) {
-    return this.col.find({ 'archive.enabledBy': jid, 'archive.mode': { $in: ['meta', 'full', 'media'] } }).toArray();
+  /** Wipes all per-chat monitoring state (used when monitoring is turned off globally). */
+  async clearAll() {
+    await this.col.deleteMany({});
+    this.cache.clear();
   }
 }
-
-export { ARCHIVE_MODES };

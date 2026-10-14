@@ -18,6 +18,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY src ./src
 COPY scripts ./scripts
+COPY assets ./assets
 # Session credentials and saved media live in /data: mount a volume here.
 RUN mkdir -p /data && chown -R node:node /data /app
 USER node

@@ -3,8 +3,8 @@ import { createMessageHandler } from './messages.js';
 export function welcomeText(settings, prefix) {
   return [
     `👋 Linked successfully! I'm *${settings.botName}*.`,
-    `This number is set as my owner, so you have full access: ${prefix}admin, ${prefix}restart and every other command.`,
-    `Send ${prefix}menu to see what I can do, or ${prefix}help for usage details.`,
+    `This number is set as my owner, so you have full access: ${prefix}delete and ${prefix}settings.`,
+    `Send ${prefix}menu to see what I can do.`,
   ].join('\n');
 }
 

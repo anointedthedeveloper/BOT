@@ -44,8 +44,8 @@ export async function createApp(config, { logger = createLogger(config), databas
   });
 
   const ownerJids = config.owners.map((o) => (o.includes('@') ? o : numberToJid(o)));
-  const archive = new ArchiveService({ config, repos, logger, client, mediaStore, settings, ownerJid: ownerJids[0] });
-  const deletions = new DeletionNotifier({ repos, client, logger, mediaStore, ttlHours: config.privacy.cacheTtlHours });
+  const archive = new ArchiveService({ config, repos, logger, client, mediaStore, settings });
+  const deletions = new DeletionNotifier({ repos, client, logger, mediaStore, ttlHours: config.privacy.cacheTtlHours, ownerJid: ownerJids[0] });
 
   errorReporter.setNotifier((text) => Promise.all(ownerJids.map((j) => client.sendText(j, text))));
 
@@ -64,22 +64,16 @@ export async function createApp(config, { logger = createLogger(config), databas
     exit(code);
   }
 
-  const requestRestart = async (by) => {
-    logger.warn({ by, mode: config.bot.restartMode }, 'restart requested');
-    if (config.bot.restartMode === 'exit') return shutdown(0, 'restart');
-    await client.restart();
-  };
-
   const deps = {
     config, logger, db: database, cipher, ...repos, settings, errorReporter, limiter, permissions,
-    mediaStore, registry, client, archive, deletions, requestRestart, pendingRestarts: new Map(), ownerJids, brandImage,
+    mediaStore, registry, client, archive, deletions, ownerJids, brandImage,
   };
   deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config });
   registerEvents(deps);
   client.on('fatal', ({ reason }) => shutdown(1, `fatal:${reason}`));
 
   const retention = startRetentionJob({
-    items: repos.items, messageCache: repos.messageCache, mediaStore, logger, intervalMs: config.privacy.retentionSweepMs, onError: report,
+    messageCache: repos.messageCache, mediaStore, logger, intervalMs: config.privacy.retentionSweepMs, onError: report,
   });
   const sweepTimer = setInterval(() => limiter.sweep(), 60_000);
   sweepTimer.unref();

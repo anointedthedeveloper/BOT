@@ -67,8 +67,8 @@ export function loadConfig(env = process.env) {
     });
   if (owners.length === 0) problems.push('OWNER_NUMBERS is required (comma separated, e.g. 15551234567)');
 
-  const prefix = str('BOT_PREFIX', '/');
-  if (!/^[^\s\p{L}\p{N}]{1,3}$/u.test(prefix)) problems.push('BOT_PREFIX must be 1-3 symbol characters (no letters, digits or spaces), e.g. / ! .');
+  const prefix = str('BOT_PREFIX', ',');
+  if (!/^[^\s\p{L}\p{N}]{1,3}$/u.test(prefix)) problems.push('BOT_PREFIX must be 1-3 symbol characters (no letters, digits or spaces), e.g. , ! .');
 
   const encryptionKey = parseEncryptionKey(str('DATA_ENCRYPTION_KEY'), problems);
 
@@ -95,12 +95,9 @@ export function loadConfig(env = process.env) {
       prefix,
       mode: oneOf('BOT_MODE', 'private', ['private', 'public']),
       allowGroupCommands: bool('ALLOW_GROUP_COMMANDS', true),
-      ownerName: str('OWNER_NAME'),
-      ownerContact: str('OWNER_CONTACT'),
       brandImagePath: str('BRAND_IMAGE_PATH') || null,
       stickerPackName: str('STICKER_PACK_NAME') || null,
       stickerPackAuthor: str('STICKER_PACK_AUTHOR') || null,
-      restartMode: oneOf('RESTART_MODE', 'reconnect', ['reconnect', 'exit']),
     },
     owners,
     mongo: { uri: mongoUri, dbName: str('MONGODB_DB', 'whatsapp_bot') },
@@ -117,14 +114,11 @@ export function loadConfig(env = process.env) {
       allowMediaCaching,
       defaultArchiveMode,
       cacheTtlHours: int('CACHE_TTL_HOURS', 24, 1, 168),
-      defaultRetentionDays: int('DEFAULT_RETENTION_DAYS', 30, 0, 3650),
-      maxRetentionDays: int('MAX_RETENTION_DAYS', 365, 1, 3650),
       retentionSweepMs: int('RETENTION_SWEEP_MS', 600_000, 1000, 86_400_000),
     },
     media: {
       dir: str('MEDIA_DIR', './data/media'),
       maxBytes: int('MAX_MEDIA_MB', 25, 1, 100) * 1024 * 1024,
-      maxItemsPerUser: int('MAX_ITEMS_PER_USER', 2000, 10, 100_000),
     },
     rateLimit: {
       max: int('RATE_LIMIT_MAX', 8, 1, 1000),

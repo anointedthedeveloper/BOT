@@ -1,29 +1,26 @@
-import { hasRole } from '../services/permissions.js';
-
-const CATEGORY_ORDER = ['General', 'Saved content', 'Privacy & settings', 'Administration'];
-
 export default {
   name: 'menu',
-  aliases: ['commands'],
-  category: 'General',
+  category: 'Deleted messages', // placed first; menu text itself is hardcoded to the required layout below
   description: 'Show available commands',
   usage: 'menu',
   async execute(ctx) {
-    const { registry, settings } = ctx.deps;
-    const groups = new Map();
-    for (const cmd of registry.list(hasRole, ctx.role)) {
-      const cat = cmd.category ?? 'General';
-      if (!groups.has(cat)) groups.set(cat, []);
-      groups.get(cat).push(cmd);
-    }
-    const rank = (c) => (CATEGORY_ORDER.includes(c) ? CATEGORY_ORDER.indexOf(c) : CATEGORY_ORDER.length);
-    const ordered = [...groups.keys()].sort((a, b) => rank(a) - rank(b));
-    const lines = [`*${settings.botName}* — command menu`];
-    for (const cat of ordered) {
-      lines.push('', `*${cat}*`);
-      for (const c of groups.get(cat)) lines.push(`${ctx.prefix}${c.name} — ${c.description}`);
-    }
-    lines.push('', `Use ${ctx.prefix}help <command> for details.`);
+    const { settings } = ctx.deps;
+    const p = ctx.prefix;
+    const lines = [
+      `*${settings.botName}*`,
+      '',
+      '*DELETED MESSAGES*',
+      `${p}delete on — Enable monitoring`,
+      `${p}delete off — Disable monitoring`,
+      `${p}delete status — Check monitoring status`,
+      '',
+      '*STICKERS*',
+      `${p}sticker — Create a sticker from supported media`,
+      '',
+      '*SETTINGS*',
+      `${p}settings — Manage bot features`,
+      `${p}settings status — View current settings`,
+    ];
     await ctx.reply(lines.join('\n'));
   },
 };
