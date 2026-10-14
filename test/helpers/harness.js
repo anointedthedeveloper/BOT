@@ -69,6 +69,9 @@ export async function startHarness({ env = {}, baileysOptions } = {}) {
       await fb.sock.ev.emitAsync('messages.upsert', { messages: [msg], type: opts.type ?? 'notify' });
       return msg;
     },
+    async linkAsNew() {
+      await fb.sock.ev.emitAsync('connection.update', { connection: 'open', isNewLogin: true });
+    },
     async revoke(chat, id, { fromMe = false, participant } = {}) {
       await fb.sock.ev.emitAsync('messages.update', [{ key: { remoteJid: chat, id, fromMe, participant }, update: { message: null, messageStubType: 1 } }]);
     },

@@ -70,7 +70,7 @@ export async function createApp(config, { logger = createLogger(config), databas
 
   const deps = {
     config, logger, db: database, cipher, ...repos, settings, errorReporter, limiter, permissions,
-    mediaStore, registry, client, archive, deletions, requestRestart, pendingRestarts: new Map(),
+    mediaStore, registry, client, archive, deletions, requestRestart, pendingRestarts: new Map(), ownerJids,
   };
   deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config });
   registerEvents(deps);

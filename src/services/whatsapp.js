@@ -124,12 +124,15 @@ export class WhatsAppClient {
   }
 
   async #onConnection(update) {
-    const { connection, lastDisconnect, qr } = update;
+    const { connection, lastDisconnect, qr, isNewLogin } = update;
 
     if (qr) {
       this.status = 'qr';
       await this.#handleQr(qr);
     }
+    // WhatsApp signals a brand-new pairing (vs. a reconnect of an existing session) right after
+    // the QR/pairing-code handshake succeeds; the actual 'open' event follows a required restart.
+    if (isNewLogin) this.justLinked = true;
     if (connection === 'connecting' && this.status !== 'qr') this.status = 'connecting';
 
     if (connection === 'open') {
@@ -137,8 +140,10 @@ export class WhatsAppClient {
       this.attempt = 0;
       this.lastConnectedAt = new Date();
       this.selfJid = normalizeJid(this.sock?.user?.id ?? '');
-      this.logger.info('whatsapp connection open');
-      await this.#emit('open', { selfJid: this.selfJid });
+      const justLinked = this.justLinked;
+      this.justLinked = false;
+      this.logger.info({ justLinked }, 'whatsapp connection open');
+      await this.#emit('open', { selfJid: this.selfJid, justLinked });
     }
 
     if (connection === 'close') {

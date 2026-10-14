@@ -192,3 +192,22 @@ test('QR_IMAGE_PATH writes a scannable PNG alongside the terminal art', async ()
   assert.ok(!JSON.stringify(t.logs).includes('test-qr-payload'), 'raw QR payload never logged, only the path');
   await rm(dir, { recursive: true, force: true });
 });
+
+test('a new pairing (isNewLogin) is reported on the open event; a plain reconnect is not', async () => {
+  const t = setup();
+  const opens = [];
+  t.client.on('open', (e) => opens.push(e.justLinked));
+  await t.client.start();
+  await t.fb.sock.ev.emitAsync('connection.update', { qr: 'x' });
+  await t.fb.sock.ev.emitAsync('connection.update', { isNewLogin: true, qr: undefined });
+  await t.fb.sock.ev.emitAsync('connection.update', close(515)); // restart required right after pairing
+  await t.timers.pending[0].fn();
+  await t.fb.sock.ev.emitAsync('connection.update', { connection: 'open' });
+  assert.deepEqual(opens, [true]);
+
+  // a later, ordinary reconnect is NOT a new login
+  await t.fb.sock.ev.emitAsync('connection.update', close(408));
+  await t.timers.pending[0].fn();
+  await t.fb.sock.ev.emitAsync('connection.update', { connection: 'open' });
+  assert.deepEqual(opens, [true, false]);
+});

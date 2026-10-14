@@ -200,3 +200,28 @@ test('group commands can be disabled for non-owners', async () => {
   await h.say(OWNER_JID, '/ping', { group: true });
   assert.match(h.lastText(GROUP), /Pong/);
 });
+
+test('owner gets a welcome message only on a genuinely new pairing, never on an ordinary reconnect', async () => {
+  const h = await boot();
+  h.clearSent();
+  await h.sock.ev.emitAsync('connection.update', { connection: 'close', lastDisconnect: { error: { output: { statusCode: 408 } } } });
+  await new Promise((r) => setTimeout(r, 1500));
+  await h.sock.ev.emitAsync('connection.update', { connection: 'open' });
+  assert.equal(h.sock.texts(OWNER_JID).length, 0, 'plain reconnect sends no welcome');
+
+  h.clearSent();
+  await h.linkAsNew();
+  const texts = h.sock.texts(OWNER_JID);
+  assert.equal(texts.length, 1);
+  assert.match(texts[0], /Linked successfully/);
+  assert.match(texts[0], /UtilityBot/);
+  assert.match(texts[0], /\/admin/);
+});
+
+test('welcome message is sent to every configured owner', async () => {
+  const h = await boot({ env: { OWNER_NUMBERS: '15550001111,15559990000' } });
+  h.clearSent();
+  await h.linkAsNew();
+  assert.equal(h.sock.texts(OWNER_JID).length, 1);
+  assert.equal(h.sock.texts('15559990000@s.whatsapp.net').length, 1);
+});
