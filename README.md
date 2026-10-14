@@ -60,6 +60,7 @@ docker compose logs -f bot  # scan the QR code on first run
 | `/note <text>` · `list` · `show #n` · `delete #n` | users | Personal notes, `#tags` supported |
 | `/bookmark [note]` (reply) · `list` · `show` · `delete` | users | Saves a *reference* + 200-char excerpt |
 | `/save [note]` (reply) · `/saved list\|show\|delete` | users | Saves text/media you chose to keep |
+| `/sticker` (reply to a photo/GIF/video/sticker) | users | Converts it into a WhatsApp sticker |
 | `/search words [type:…] [#tag]` | users | Searches your own saved content |
 | `/privacy [logging\|retention\|archive off\|meta\|full\|media\|export\|purge]` | everyone* | Data retention and logging controls |
 | `/owner` | everyone | Owner contact (only what the operator configured) |
@@ -104,6 +105,10 @@ Events → `events/` (no business logic) → `services/` (rules) → `database/`
 - Admin/owner commands are authorised by role on every call; owner status cannot be set through the database; admins cannot ban the owner or other admins.
 - Per-user rate limiting with escalation to a temporary mute. Replayed (stale) messages after a reconnect are ignored for command purposes.
 - Minimal collection: nothing is captured from a chat without an announced opt-in; cached messages auto-expire via a MongoDB TTL index; saved items expire per user retention; `/privacy purge` deletes everything about a user.
+
+## Stickers
+
+Reply to a photo, GIF/video or existing sticker with `/sticker` to convert it into a WhatsApp sticker. Images are padded to a square transparent WebP; video/GIF clips (capped at 10 seconds) become an animated WebP via `ffmpeg`. Requires the `ffmpeg` binary (included in the Docker image) and the `sharp` package (installed automatically). View-once media is refused, same as `/save`.
 
 ## Branding
 

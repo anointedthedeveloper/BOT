@@ -10,6 +10,9 @@ ENV NODE_ENV=production \
     MEDIA_DIR=/data/media \
     HEALTH_HOST=0.0.0.0 \
     HEALTH_PORT=3000
+# ffmpeg is required for /sticker on video/GIF input (static image stickers work without it).
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
