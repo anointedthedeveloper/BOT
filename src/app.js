@@ -14,6 +14,7 @@ import { WhatsAppClient } from './services/whatsapp.js';
 import { createAuthProvider } from './services/authProvider.js';
 import { startRetentionJob } from './services/retention.js';
 import { createHealthServer } from './services/health.js';
+import { startKeepAlive } from './services/keepAlive.js';
 import { loadBrandImage } from './services/branding.js';
 import { CommandRegistry, CommandRouter } from './commands/index.js';
 import { registerEvents } from './events/index.js';
@@ -59,6 +60,7 @@ export async function createApp(config, { logger = createLogger(config), databas
     const force = setTimeout(() => exit(code || 1), 10_000);
     force.unref();
     retention.stop();
+    keepAlive.stop();
     clearInterval(sweepTimer);
     await Promise.allSettled([client.stop(), health.stop()]);
     await Promise.allSettled([database.close()]);
@@ -80,6 +82,7 @@ export async function createApp(config, { logger = createLogger(config), databas
   const sweepTimer = setInterval(() => limiter.sweep(), 60_000);
   sweepTimer.unref();
 
+  const keepAlive = startKeepAlive(logger);
   const health = createHealthServer({
     logger,
     getStatus: async () => ({ whatsapp: client.status, mongo: await database.ping(), uptimeSec: Math.round(process.uptime()), version: config.version }),
