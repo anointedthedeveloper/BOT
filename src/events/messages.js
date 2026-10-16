@@ -22,6 +22,10 @@ export function createMessageHandler(deps) {
           if (client.isOwnOutbound(msg.key.id)) continue;
           deps.logger.info({ msgTypes: Object.keys(msg.message).join(','), raw: JSON.stringify(msg.message).slice(0, 600) }, 'append:raw');
           await viewOnce.handle(msg);
+          const ts = Number(msg.messageTimestamp?.toString?.() ?? msg.messageTimestamp ?? 0);
+          if (ts && Date.now() / 1000 - ts > MAX_COMMAND_AGE_S) continue;
+          const ctx = buildContext(msg, deps);
+          if (ctx) await router.handle(ctx);
         } catch (err) {
           errorReporter.report(err, { scope: 'viewonce.handle' });
         }
