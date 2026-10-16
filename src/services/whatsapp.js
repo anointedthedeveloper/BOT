@@ -180,19 +180,12 @@ export class WhatsAppClient {
   async #handleQr(qr) {
     if (this.pairingRequested) return;
 
-    // If phone number already set in config, use it directly
-    let phone = this.config.auth.pairingPhoneNumber;
-
-    // Otherwise ask interactively once
-    if (!phone) {
-      phone = await this.#askPairingChoice();
-    }
-
+    const phone = this.config.auth.pairingPhoneNumber;
     if (phone) {
       this.pairingRequested = true;
       try {
         const code = await this.sock.requestPairingCode(phone);
-        this.output.write(`\nWhatsApp pairing code: ${code}\nOn your phone: Settings > Linked devices > Link with phone number.\n\n`);
+        this.output.write(`\n${'─'.repeat(60)}\n  PAIRING CODE: ${code}\n  On your phone: Settings > Linked Devices > Link with phone number\n${'─'.repeat(60)}\n\n`);
       } catch (err) {
         this.pairingRequested = false;
         this.onError(err, { scope: 'pairing' });
@@ -200,7 +193,7 @@ export class WhatsAppClient {
       return;
     }
 
-    // QR path
+    // No phone set — fall back to QR in logs
     const art = await qrcode.toString(qr, { type: 'utf8', small: true, errorCorrectionLevel: 'L', scale: 1 });
     this.output.write(`\n${'─'.repeat(60)}\n  SCAN QR CODE: WhatsApp > Linked Devices > Link a Device\n${'─'.repeat(60)}\n${art}${'─'.repeat(60)}\n`);
     this.logger.info('QR code printed above — scan it with WhatsApp > Linked devices');
@@ -213,38 +206,6 @@ export class WhatsAppClient {
         this.onError(err, { scope: 'qr-image' });
       }
     }
-  }
-
-  /** Prompts the user once to choose QR or phone-number pairing. Returns the phone or null for QR. */
-  async #askPairingChoice() {
-    // No TTY (e.g. Render, Docker) — skip prompt and fall through to QR in logs
-    if (!process.stdin.isTTY) return null;
-    return new Promise((resolve) => {
-      this.output.write('\nLink method: [1] Scan QR code  [2] Phone number pairing code\nEnter 1 or 2: ');
-      const stdin = process.stdin;
-      const wasPaused = stdin.isPaused();
-      stdin.resume();
-      stdin.setEncoding('utf8');
-      const onData = (chunk) => {
-        const choice = chunk.trim();
-        stdin.removeListener('data', onData);
-        if (wasPaused) stdin.pause();
-        if (choice === '2') {
-          this.output.write('Enter your phone number (digits only, with country code, e.g. 2349012345678): ');
-          stdin.resume();
-          const onPhone = (num) => {
-            const digits = num.trim().replace(/[^\d]/g, '');
-            stdin.removeListener('data', onPhone);
-            if (wasPaused) stdin.pause();
-            resolve(digits || null);
-          };
-          stdin.once('data', onPhone);
-        } else {
-          resolve(null);
-        }
-      };
-      stdin.once('data', onData);
-    });
   }
 
   async #handleLogout() {
