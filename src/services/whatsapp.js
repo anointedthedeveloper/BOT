@@ -217,6 +217,8 @@ export class WhatsAppClient {
 
   /** Prompts the user once to choose QR or phone-number pairing. Returns the phone or null for QR. */
   async #askPairingChoice() {
+    // No TTY (e.g. Render, Docker) — skip prompt and fall through to QR in logs
+    if (!process.stdin.isTTY) return null;
     return new Promise((resolve) => {
       this.output.write('\nLink method: [1] Scan QR code  [2] Phone number pairing code\nEnter 1 or 2: ');
       const stdin = process.stdin;
