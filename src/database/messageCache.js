@@ -10,7 +10,7 @@ export class MessageCacheRepository {
     this.now = now;
   }
 
-  async record({ chatJid, chatAlt, msgId, senderJid, fromMe, timestamp, kind, text, contentStored, reason, mediaMeta, mediaFile }) {
+  async record({ chatJid, chatAlt, msgId, senderJid, fromMe, timestamp, kind, text, contentStored, reason, mediaMeta, mediaFile, pushName }) {
     const createdAt = this.now();
     await this.col.updateOne(
       { chatJid, msgId },
@@ -21,6 +21,7 @@ export class MessageCacheRepository {
           contentStored: Boolean(contentStored),
           reason: reason ?? null,
           mediaMeta: mediaMeta ?? null,
+          pushName: pushName ?? null,
           createdAt,
           mediaFile: mediaFile ?? null,
           // Documents with a file on disk are swept by the retention job (so the file goes too);

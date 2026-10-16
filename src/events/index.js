@@ -14,7 +14,7 @@ export function registerEvents(deps) {
   client.on('messages.upsert', createMessageHandler(deps));
   client.on('messages.update', (updates) => deletions.handleUpdates(updates));
   client.on('open', async ({ selfJid, justLinked }) => {
-    logger.info({ connected: Boolean(selfJid) }, 'bot ready');
+    logger.info({ connected: Boolean(selfJid), selfJid }, 'bot ready');
     if (!justLinked) return;
     const text = welcomeText(settings, settings.prefix);
     for (const jid of ownerJids) {

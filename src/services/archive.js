@@ -19,7 +19,7 @@ export class ArchiveService {
     this.settings = settings;
   }
 
-  async record({ msg, chatJids, senderJid }) {
+  async record({ msg, chatJids, senderJid, pushName }) {
     const mode = this.settings.defaultArchiveMode; // single global switch, live (see ,delete)
     if (mode === 'off') return { stored: false, reason: 'monitoring-off' };
 
@@ -74,6 +74,7 @@ export class ArchiveService {
       msgId: msg.key.id,
       senderJid,
       fromMe: msg.key.fromMe,
+      pushName: pushName ?? null,
       timestamp: Number(msg.messageTimestamp?.toString?.() ?? msg.messageTimestamp ?? Math.floor(Date.now() / 1000)),
       kind: info.viewOnce ? 'view-once' : info.kind,
       text: contentStored ? info.text : null,

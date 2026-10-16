@@ -43,7 +43,7 @@ export class DeletionNotifier {
 
     const cached = await this.repos.messageCache.find(chatJids, key.id);
     const outcome = !cached ? 'unknown-original' : cached.contentStored || cached.mediaFile ? 'original-available' : 'metadata-only';
-    const text = this.#format(outcome, cached, key, chatJids[0]);
+    const text = this.#format(outcome, cached, key, chatJids[0], u.pushName);
 
     try {
       await this.client.sendText(this.ownerJid, text);
@@ -70,7 +70,7 @@ export class DeletionNotifier {
     }
   }
 
-  #format(outcome, c, key, chatJid) {
+  #format(outcome, c, key, chatJid, pushName) {
     const where = chatJid.endsWith('@g.us') ? 'a group chat' : `chat with ${this.#label(chatJid)}`;
     const deletedBy = key.participant ? this.#label(key.participant) : null;
     if (outcome === 'unknown-original') {
@@ -84,7 +84,7 @@ export class DeletionNotifier {
     const head = [
       outcome === 'original-available' ? '🗑️ *Deleted message* — original content available' : '🗑️ *Deleted message detected* — content not stored',
       `Chat: ${where}`,
-      `From: ${this.#label(c.senderJid)}${c.fromMe ? ' (you)' : ''}`,
+      `From: ${this.#label(c.senderJid, c.pushName ?? pushName)}${c.fromMe ? ' (you)' : ''}`,
       `Sent: ${formatDate(c.timestamp * 1000, 'UTC')}`,
       `Type: ${KIND_ICON[c.kind] ?? ''} ${c.kind}${c.mediaMeta?.size ? ` (${formatBytes(c.mediaMeta.size)})` : ''}`,
       deletedBy && deletedBy !== this.#label(c.senderJid) ? `Deleted by: ${deletedBy}` : null,
@@ -98,9 +98,10 @@ export class DeletionNotifier {
     return [...head, `Why no content: ${c.reason ?? 'not captured'}.`].join('\n');
   }
 
-  #label(jid) {
+  #label(jid, name) {
     const n = normalizeJid(jid);
     const user = n.split('@')[0];
-    return n.endsWith('@s.whatsapp.net') ? `+${user}` : n.endsWith('@lid') ? `contact …${user.slice(-4)}` : user;
+    const number = n.endsWith('@s.whatsapp.net') ? `+${user}` : n.endsWith('@lid') ? `contact …${user.slice(-4)}` : user;
+    return name ? `${name} (${number})` : number;
   }
 }

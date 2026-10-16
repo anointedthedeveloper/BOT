@@ -1,4 +1,3 @@
-import qrcodeTerminal from 'qrcode-terminal';
 import qrcode from 'qrcode';
 import { normalizeJid } from '../utils/jid.js';
 import { BoundedSet } from '../utils/lru.js';
@@ -105,14 +104,27 @@ export class WhatsAppClient {
     this.auth = await this.authProvider();
     const { Browsers } = this.baileys;
     const makeWASocket = this.baileys.default ?? this.baileys.makeWASocket;
+    const msgStore = new Map();
     const sock = makeWASocket({
       auth: this.auth.state,
       logger: this.logger.child({ module: 'baileys' }, { level: this.config.logging.baileysLevel }),
       browser: Browsers.appropriate('Chrome'),
-      markOnlineOnConnect: false, // keep phone notifications working
-      syncFullHistory: false, // we never need old history
+      markOnlineOnConnect: false,
+      syncFullHistory: false,
       generateHighQualityLinkPreview: false,
-      getMessage: async () => undefined,
+      shouldIgnoreJid: () => false,
+      getMessage: async (key) => {
+        const id = `${key.remoteJid}:${key.id}`;
+        return msgStore.get(id) ?? undefined;
+      },
+    });
+    sock.ev.on('messages.upsert', ({ messages }) => {
+      for (const m of messages) {
+        if (m.message && m.key?.id && m.key?.remoteJid) {
+          msgStore.set(`${m.key.remoteJid}:${m.key.id}`, m.message);
+          if (msgStore.size > 500) msgStore.delete(msgStore.keys().next().value);
+        }
+      }
     });
     this.sock = sock;
     const current = () => this.sock === sock;
@@ -166,13 +178,20 @@ export class WhatsAppClient {
   }
 
   async #handleQr(qr) {
-    const phone = this.config.auth.pairingPhoneNumber;
+    if (this.pairingRequested) return;
+
+    // If phone number already set in config, use it directly
+    let phone = this.config.auth.pairingPhoneNumber;
+
+    // Otherwise ask interactively once
+    if (!phone) {
+      phone = await this.#askPairingChoice();
+    }
+
     if (phone) {
-      if (this.pairingRequested) return;
       this.pairingRequested = true;
       try {
         const code = await this.sock.requestPairingCode(phone);
-        // Printed to the terminal only: never logged, never persisted.
         this.output.write(`\nWhatsApp pairing code: ${code}\nOn your phone: Settings > Linked devices > Link with phone number.\n\n`);
       } catch (err) {
         this.pairingRequested = false;
@@ -180,8 +199,11 @@ export class WhatsAppClient {
       }
       return;
     }
+
+    // QR path
     this.logger.info('scan the QR code with WhatsApp > Linked devices (the code is not written to logs)');
-    qrcodeTerminal.generate(qr, { small: true }, (art) => this.output.write(`\n${art}\n`));
+    const art = await qrcode.toString(qr, { type: 'terminal', small: true, errorCorrectionLevel: 'L' });
+    this.output.write(`\n${art}\n`);
     const imagePath = this.config.auth.qrImagePath;
     if (imagePath) {
       try {
@@ -191,6 +213,36 @@ export class WhatsAppClient {
         this.onError(err, { scope: 'qr-image' });
       }
     }
+  }
+
+  /** Prompts the user once to choose QR or phone-number pairing. Returns the phone or null for QR. */
+  async #askPairingChoice() {
+    return new Promise((resolve) => {
+      this.output.write('\nLink method: [1] Scan QR code  [2] Phone number pairing code\nEnter 1 or 2: ');
+      const stdin = process.stdin;
+      const wasPaused = stdin.isPaused();
+      stdin.resume();
+      stdin.setEncoding('utf8');
+      const onData = (chunk) => {
+        const choice = chunk.trim();
+        stdin.removeListener('data', onData);
+        if (wasPaused) stdin.pause();
+        if (choice === '2') {
+          this.output.write('Enter your phone number (digits only, with country code, e.g. 2349012345678): ');
+          stdin.resume();
+          const onPhone = (num) => {
+            const digits = num.trim().replace(/[^\d]/g, '');
+            stdin.removeListener('data', onPhone);
+            if (wasPaused) stdin.pause();
+            resolve(digits || null);
+          };
+          stdin.once('data', onPhone);
+        } else {
+          resolve(null);
+        }
+      };
+      stdin.once('data', onData);
+    });
   }
 
   async #handleLogout() {
@@ -319,5 +371,11 @@ export class WhatsAppClient {
   async downloadMedia(messageLike) {
     const sock = this.#requireOpen();
     return this.baileys.downloadMediaMessage(messageLike, 'buffer', {}, { logger: this.logger, reuploadRequest: sock.updateMediaMessage });
+  }
+
+  /** Downloads content directly from a media object (used for view-once). */
+  async downloadContent(mediaObj, mediaType) {
+    this.#requireOpen();
+    return this.baileys.downloadContentFromMessage(mediaObj, mediaType);
   }
 }
