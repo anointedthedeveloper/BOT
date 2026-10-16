@@ -202,7 +202,7 @@ export class WhatsAppClient {
 
     // QR path
     this.logger.info('scan the QR code with WhatsApp > Linked devices (the code is not written to logs)');
-    const art = await qrcode.toString(qr, { type: 'terminal', small: true, errorCorrectionLevel: 'L' });
+    const art = await qrcode.toString(qr, { type: 'utf8', small: true, errorCorrectionLevel: 'L', scale: 1 });
     this.output.write(`\n${art}\n`);
     const imagePath = this.config.auth.qrImagePath;
     if (imagePath) {
