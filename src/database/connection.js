@@ -5,7 +5,7 @@ import { MongoClient } from 'mongodb';
  * `retries` covers the common "database container still starting" case.
  */
 export async function connectDatabase({ uri, dbName }, logger, { retries = 5, delayMs = 2000 } = {}) {
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 8000, appName: 'whatsapp-utility-bot' });
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 8000, appName: 'whatsapp-utility-bot', tls: true });
   let lastErr;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
