@@ -142,6 +142,7 @@ export class WhatsAppClient {
 
     if (qr) {
       this.status = 'qr';
+      this.lastQr = qr;
       await this.#handleQr(qr);
     }
     // WhatsApp signals a brand-new pairing (vs. a reconnect of an existing session) right after
@@ -272,6 +273,10 @@ export class WhatsAppClient {
 
   get isOpen() {
     return this.status === 'open' && Boolean(this.sock);
+  }
+
+  get currentQr() {
+    return this.status === 'open' ? null : (this.lastQr ?? null);
   }
 
   #requireOpen() {

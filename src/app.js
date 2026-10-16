@@ -85,7 +85,7 @@ export async function createApp(config, { logger = createLogger(config), databas
   const keepAlive = startKeepAlive(logger);
   const health = createHealthServer({
     logger,
-    getStatus: async () => ({ whatsapp: client.status, mongo: await database.ping(), uptimeSec: Math.round(process.uptime()), version: config.version }),
+    getStatus: async () => ({ whatsapp: client.status, qr: client.currentQr, mongo: await database.ping(), uptimeSec: Math.round(process.uptime()), version: config.version }),
   });
 
   return {
