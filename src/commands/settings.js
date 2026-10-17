@@ -4,12 +4,13 @@ export default {
   name: 'settings',
   category: 'Settings',
   description: 'Manage bot features',
-  usage: 'settings [delete on|off | sticker on|off | status]',
+  usage: 'settings [delete on|off | sticker on|off | autoviewstatus on|off | status]',
   role: 'owner',
   details: [
     '{p}settings — compact overview of what\'s on.',
     '{p}settings delete on|off — same switch as {p}delete on|off.',
     '{p}settings sticker on|off — enable or disable the {p}sticker command.',
+    '{p}settings autoviewstatus on|off — auto-read WhatsApp statuses.',
     '{p}settings status — current values.',
   ].join('\n'),
   async execute(ctx) {
@@ -21,6 +22,7 @@ export default {
       return [
         `• delete: *${mode === 'off' ? 'OFF' : `ON (${mode})`}*`,
         `• sticker: *${settings.stickerEnabled ? 'ENABLED' : 'DISABLED'}*`,
+        `• autoviewstatus: *${settings.autoViewStatus ? 'ON' : 'OFF'}*`,
       ].join('\n');
     };
 
@@ -59,6 +61,11 @@ export default {
       if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${ctx.prefix}settings sticker on|off`);
       await settings.setStickerEnabled(arg === 'on');
       return ctx.reply(`✅ sticker: ${arg === 'on' ? 'ENABLED' : 'DISABLED'}.`);
+    }
+    if (sub === 'autoviewstatus') {
+      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${ctx.prefix}settings autoviewstatus on|off`);
+      await settings.setAutoViewStatus(arg === 'on');
+      return ctx.reply(`✅ autoviewstatus: ${arg === 'on' ? 'ON' : 'OFF'}.`);
     }
     throw new UserError(`Usage: ${ctx.prefix}${this.usage}`);
   },

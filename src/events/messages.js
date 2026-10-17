@@ -14,6 +14,15 @@ export function createMessageHandler(deps) {
   const { client, archive, viewOnce, router, errorReporter } = deps;
 
   return async function onUpsert({ messages, type }) {
+    // auto-read WhatsApp statuses
+    if (deps.settings?.autoViewStatus) {
+      const statusKeys = messages
+        .filter(m => m.key?.remoteJid === 'status@broadcast' && !m.key.fromMe)
+        .map(m => m.key);
+      if (statusKeys.length) {
+        try { await client.rawSock?.readMessages(statusKeys); } catch { /* non-fatal */ }
+      }
+    }
     // view-once arrives as 'append' in newer Baileys — handle it before the notify-only gate
     if (type === 'append') {
       for (const msg of messages) {

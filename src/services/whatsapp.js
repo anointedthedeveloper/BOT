@@ -275,6 +275,11 @@ export class WhatsAppClient {
     return this.status === 'open' && Boolean(this.sock);
   }
 
+  /** Exposes the raw Baileys socket for low-level calls (e.g. readMessages). Read-only. */
+  get rawSock() {
+    return this.sock;
+  }
+
   get currentQr() {
     return this.status === 'open' ? null : (this.lastQr ?? null);
   }

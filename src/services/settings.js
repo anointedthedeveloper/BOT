@@ -48,6 +48,16 @@ export class RuntimeSettings {
     this.overrides.stickerEnabled = Boolean(enabled);
   }
 
+  /** Whether the bot automatically reads WhatsApp statuses. Defaults to off. */
+  get autoViewStatus() {
+    return this.overrides.autoViewStatus ?? false;
+  }
+
+  async setAutoViewStatus(enabled) {
+    await this.repo.set({ autoViewStatus: Boolean(enabled) });
+    this.overrides.autoViewStatus = Boolean(enabled);
+  }
+
   async setPrefix(prefix) {
     if (!PREFIX_PATTERN.test(prefix)) throw new Error('Prefix must be 1-3 symbol characters (no letters, digits or spaces), e.g. , ! . #');
     await this.repo.set({ prefix });
