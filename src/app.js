@@ -87,11 +87,11 @@ export async function createApp(config, { logger = createLogger(config), databas
   const keepAlive = startKeepAlive(logger);
   const tenants = new TenantsRepository(database.db);
   await tenants.ensureIndexes();
-  const sessionManager = new SessionManager({ config, db: database.db, cipher, baileys, logger });
+  const sessionManager = new SessionManager({ config, db: database.db, cipher, baileys, logger, tenants });
 
   // resume any previously connected tenants
   for (const t of await tenants.list()) {
-    if (t.status === 'open') {
+    if (t.status === 'open' || t.status === 'reconnecting') {
       sessionManager.startSession(t.phone).catch((err) => logger.warn({ err, phone: t.phone }, 'failed to resume tenant session'));
     }
   }

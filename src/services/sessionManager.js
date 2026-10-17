@@ -19,12 +19,13 @@ import { MessageCacheRepository } from '../database/messageCache.js';
 import { ensureIndexes } from '../database/connection.js';
 
 export class SessionManager {
-  constructor({ config, db, cipher, baileys, logger }) {
+  constructor({ config, db, cipher, baileys, logger, tenants }) {
     this.config = config;
     this.db = db;
     this.cipher = cipher;
     this.baileys = baileys;
     this.logger = logger;
+    this.tenants = tenants;
     this.sessions = new Map();
   }
 
@@ -84,8 +85,22 @@ export class SessionManager {
     deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config: tenantConfig });
     registerEvents(deps);
 
-    client.on('open', () => { session.status = 'open'; session.pairingCode = null; });
-    client.on('fatal', () => { session.status = 'failed'; this.sessions.delete(phone); });
+    client.on('open', async () => {
+      session.status = 'open';
+      session.pairingCode = null;
+      await this.tenants.setStatus(phone, 'open').catch(() => {});
+    });
+    client.on('fatal', async () => {
+      session.status = 'failed';
+      await this.tenants.setStatus(phone, 'failed').catch(() => {});
+      this.sessions.delete(phone);
+    });
+    client.on('close', async () => {
+      if (session.status === 'open') {
+        session.status = 'reconnecting';
+        await this.tenants.setStatus(phone, 'reconnecting').catch(() => {});
+      }
+    });
 
     await client.start();
     log.info({ phone }, 'tenant session started');
