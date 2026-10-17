@@ -149,16 +149,16 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger }) 
     const url = new URL(req.url, 'http://localhost');
     const path = url.pathname;
 
-    // Frontend
-    if (req.method === 'GET' && (path === '/fd' || path === '/fd/')) {
-      return send(200, HTML, 'text/html');
-    }
-
-    // Health
+    // Health (keep these so Render health checks still work)
     if (req.method === 'GET' && path === '/healthz') return send(200, { status: 'ok' });
     if (req.method === 'GET' && path === '/readyz') {
       const s = await getStatus();
       return send(s.mongo ? 200 : 503, s);
+    }
+
+    // Frontend
+    if (req.method === 'GET' && (path === '/fd' || path === '/fd/')) {
+      return send(200, HTML, 'text/html');
     }
 
     // API: signup

@@ -13,7 +13,6 @@ import { ViewOnceService } from './services/viewonce.js';
 import { WhatsAppClient } from './services/whatsapp.js';
 import { createAuthProvider } from './services/authProvider.js';
 import { startRetentionJob } from './services/retention.js';
-import { createHealthServer } from './services/health.js';
 import { createDashboard } from './services/dashboard.js';
 import { SessionManager } from './services/sessionManager.js';
 import { startKeepAlive } from './services/keepAlive.js';
@@ -65,7 +64,7 @@ export async function createApp(config, { logger = createLogger(config), databas
     retention.stop();
     keepAlive.stop();
     clearInterval(sweepTimer);
-    await Promise.allSettled([client.stop(), health.stop(), dashboard.stop()]);
+    await Promise.allSettled([client.stop(), dashboard.stop()]);
     await Promise.allSettled([database.close()]);
     clearTimeout(force);
     exit(code);
@@ -97,10 +96,6 @@ export async function createApp(config, { logger = createLogger(config), databas
     }
   }
 
-  const health = createHealthServer({
-    logger,
-    getStatus: async () => ({ whatsapp: client.status, qr: client.currentQr, mongo: await database.ping(), uptimeSec: Math.round(process.uptime()), version: config.version }),
-  });
   const dashboard = createDashboard({
     sessionManager, tenants,
     getStatus: async () => ({ mongo: await database.ping(), uptimeSec: Math.round(process.uptime()) }),
@@ -113,8 +108,9 @@ export async function createApp(config, { logger = createLogger(config), databas
     shutdown,
     async start() {
       if (config.health.port > 0) {
-        const addr = await health.start(config.health.port, config.health.host);
-        logger.info({ port: addr.port }, 'health endpoint listening');
+        const addr = await dashboard.start(config.health.port, config.health.host);
+        logger.info({ port: addr.port }, 'server listening — dashboard at /fd');
+      }
         // dashboard runs on port+1
         const dashAddr = await dashboard.start(config.health.port + 1, config.health.host);
         logger.info({ port: dashAddr.port }, 'dashboard listening — signup at /fd');
