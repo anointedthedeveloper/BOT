@@ -25,7 +25,7 @@ export class SessionManager {
     this.cipher = cipher;
     this.baileys = baileys;
     this.logger = logger;
-    this.sessions = new Map(); // phone -> session object
+    this.sessions = new Map();
   }
 
   async startSession(phone, { pairingPhone = null } = {}) {
@@ -51,8 +51,7 @@ export class SessionManager {
     const registry = await CommandRegistry.load();
     const brandImage = await loadBrandImage(this.config.bot.brandImagePath, log);
 
-    // intercept output to capture pairing code
-    const session = { phone, status: 'connecting', pairingCode: null };
+    const session = { phone, status: 'connecting', pairingCode: null, client: null };
     this.sessions.set(phone, session);
 
     const captureOutput = {

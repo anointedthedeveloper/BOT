@@ -14,7 +14,10 @@ import { WhatsAppClient } from './services/whatsapp.js';
 import { createAuthProvider } from './services/authProvider.js';
 import { startRetentionJob } from './services/retention.js';
 import { createHealthServer } from './services/health.js';
+import { createDashboard } from './services/dashboard.js';
+import { SessionManager } from './services/sessionManager.js';
 import { startKeepAlive } from './services/keepAlive.js';
+import { TenantsRepository } from './database/index.js';
 import { loadBrandImage } from './services/branding.js';
 import { CommandRegistry, CommandRouter } from './commands/index.js';
 import { registerEvents } from './events/index.js';
@@ -62,7 +65,7 @@ export async function createApp(config, { logger = createLogger(config), databas
     retention.stop();
     keepAlive.stop();
     clearInterval(sweepTimer);
-    await Promise.allSettled([client.stop(), health.stop()]);
+    await Promise.allSettled([client.stop(), health.stop(), dashboard.stop()]);
     await Promise.allSettled([database.close()]);
     clearTimeout(force);
     exit(code);
@@ -83,9 +86,25 @@ export async function createApp(config, { logger = createLogger(config), databas
   sweepTimer.unref();
 
   const keepAlive = startKeepAlive(logger);
+  const tenants = new TenantsRepository(database.db);
+  await tenants.ensureIndexes();
+  const sessionManager = new SessionManager({ config, db: database.db, cipher, baileys, logger });
+
+  // resume any previously connected tenants
+  for (const t of await tenants.list()) {
+    if (t.status === 'open') {
+      sessionManager.startSession(t.phone).catch((err) => logger.warn({ err, phone: t.phone }, 'failed to resume tenant session'));
+    }
+  }
+
   const health = createHealthServer({
     logger,
     getStatus: async () => ({ whatsapp: client.status, qr: client.currentQr, mongo: await database.ping(), uptimeSec: Math.round(process.uptime()), version: config.version }),
+  });
+  const dashboard = createDashboard({
+    sessionManager, tenants,
+    getStatus: async () => ({ mongo: await database.ping(), uptimeSec: Math.round(process.uptime()) }),
+    logger,
   });
 
   return {
@@ -96,6 +115,9 @@ export async function createApp(config, { logger = createLogger(config), databas
       if (config.health.port > 0) {
         const addr = await health.start(config.health.port, config.health.host);
         logger.info({ port: addr.port }, 'health endpoint listening');
+        // dashboard runs on port+1
+        const dashAddr = await dashboard.start(config.health.port + 1, config.health.host);
+        logger.info({ port: dashAddr.port }, 'dashboard listening — signup at /fd');
       }
       await client.start();
       logger.info({ version: config.version, mode: config.bot.mode, commands: registry.unique.length }, 'bot started');
