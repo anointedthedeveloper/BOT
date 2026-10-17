@@ -3,8 +3,8 @@
  * Documents expire automatically via a TTL index. Media bytes are never stored here.
  */
 export class MessageCacheRepository {
-  constructor(db, { cipher, ttlHours, now = () => new Date() }) {
-    this.col = db.collection('message_cache');
+  constructor(db, { cipher, ttlHours, now = () => new Date() }, collection = 'message_cache') {
+    this.col = db.collection(collection);
     this.cipher = cipher;
     this.ttlMs = ttlHours * 3_600_000;
     this.now = now;

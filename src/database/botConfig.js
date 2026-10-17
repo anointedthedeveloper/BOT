@@ -1,7 +1,7 @@
 /** Owner-editable runtime overrides (prefix, bot name). Environment values are the defaults. */
 export class BotConfigRepository {
-  constructor(db) {
-    this.col = db.collection('bot_config');
+  constructor(db, collection = 'bot_config') {
+    this.col = db.collection(collection);
   }
 
   async get() {

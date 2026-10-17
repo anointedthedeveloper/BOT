@@ -1,0 +1,106 @@
+import { WhatsAppClient } from './whatsapp.js';
+import { useMongoAuthState } from '../database/authState.js';
+import { CommandRegistry, CommandRouter } from '../commands/index.js';
+import { PermissionService } from './permissions.js';
+import { RateLimiter } from './rateLimiter.js';
+import { ErrorReporter } from './errorReporter.js';
+import { MediaStore } from './mediaStore.js';
+import { ArchiveService } from './archive.js';
+import { DeletionNotifier } from './deletions.js';
+import { ViewOnceService } from './viewonce.js';
+import { RuntimeSettings } from './settings.js';
+import { loadBrandImage } from './branding.js';
+import { registerEvents } from '../events/index.js';
+import { numberToJid } from '../utils/jid.js';
+import { BotConfigRepository } from '../database/botConfig.js';
+import { UsersRepository } from '../database/users.js';
+import { ChatsRepository } from '../database/chats.js';
+import { MessageCacheRepository } from '../database/messageCache.js';
+import { ensureIndexes } from '../database/connection.js';
+
+export class SessionManager {
+  constructor({ config, db, cipher, baileys, logger }) {
+    this.config = config;
+    this.db = db;
+    this.cipher = cipher;
+    this.baileys = baileys;
+    this.logger = logger;
+    this.sessions = new Map(); // phone -> session object
+  }
+
+  async startSession(phone, { pairingPhone = null } = {}) {
+    if (this.sessions.has(phone)) return this.sessions.get(phone);
+
+    const log = this.logger.child({ tenant: phone });
+    const p = `t_${phone}_`;
+
+    const repos = {
+      users: new UsersRepository(this.db, `${p}users`),
+      chats: new ChatsRepository(this.db, `${p}chats`),
+      messageCache: new MessageCacheRepository(this.db, { cipher: this.cipher, ttlHours: this.config.privacy.cacheTtlHours }, `${p}message_cache`),
+      botConfig: new BotConfigRepository(this.db, `${p}bot_config`),
+    };
+    await ensureIndexes(this.db, p);
+
+    const settings = await new RuntimeSettings(this.config, repos.botConfig).load();
+    const errorReporter = new ErrorReporter({ logger: log, notifyOwner: false });
+    const limiter = new RateLimiter(this.config.rateLimit);
+    const tenantConfig = { ...this.config, owners: [phone], auth: { ...this.config.auth, pairingPhoneNumber: pairingPhone } };
+    const permissions = new PermissionService({ config: tenantConfig, users: repos.users });
+    const mediaStore = new MediaStore({ dir: this.config.media.dir, cipher: this.cipher, logger: log });
+    const registry = await CommandRegistry.load();
+    const brandImage = await loadBrandImage(this.config.bot.brandImagePath, log);
+
+    // intercept output to capture pairing code
+    const session = { phone, status: 'connecting', pairingCode: null };
+    this.sessions.set(phone, session);
+
+    const captureOutput = {
+      write: (text) => {
+        const m = text.match(/PAIRING CODE: ([A-Z0-9]+)/);
+        if (m) { session.pairingCode = m[1]; session.status = 'pairing'; }
+      },
+    };
+
+    const client = new WhatsAppClient({
+      config: tenantConfig, logger: log, baileys: this.baileys,
+      onError: (err, ctx) => errorReporter.report(err, ctx),
+      authProvider: async () => useMongoAuthState(this.db, { baileys: this.baileys, cipher: this.cipher, collection: `wa_auth_${phone}` }),
+      output: captureOutput,
+    });
+
+    session.client = client;
+
+    const ownerJid = numberToJid(phone);
+    const archive = new ArchiveService({ config: tenantConfig, repos, logger: log, client, mediaStore, settings });
+    const deletions = new DeletionNotifier({ repos, client, logger: log, mediaStore, ttlHours: this.config.privacy.cacheTtlHours, ownerJid });
+    const viewOnce = new ViewOnceService({ client, logger: log, ownerJid });
+
+    const deps = {
+      config: tenantConfig, logger: log, db: { db: this.db }, cipher: this.cipher,
+      ...repos, settings, errorReporter, limiter, permissions,
+      mediaStore, registry, client, archive, deletions, viewOnce,
+      ownerJids: [ownerJid], brandImage,
+    };
+    deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config: tenantConfig });
+    registerEvents(deps);
+
+    client.on('open', () => { session.status = 'open'; session.pairingCode = null; });
+    client.on('fatal', () => { session.status = 'failed'; this.sessions.delete(phone); });
+
+    await client.start();
+    log.info({ phone }, 'tenant session started');
+    return session;
+  }
+
+  getSession(phone) { return this.sessions.get(phone) ?? null; }
+
+  async stopSession(phone) {
+    const s = this.sessions.get(phone);
+    if (s) { await s.client?.stop(); this.sessions.delete(phone); }
+  }
+
+  listSessions() {
+    return [...this.sessions.values()].map(({ phone, status }) => ({ phone, status }));
+  }
+}

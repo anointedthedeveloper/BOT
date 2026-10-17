@@ -6,8 +6,8 @@
  * notifications are never sent for a chat that was never actually told monitoring was happening.
  */
 export class ChatsRepository {
-  constructor(db, { cacheMs = 15_000, now = () => Date.now() } = {}) {
-    this.col = db.collection('chats');
+  constructor(db, collection = 'chats', { cacheMs = 15_000, now = () => Date.now() } = {}) {
+    this.col = db.collection(collection);
     this.cacheMs = cacheMs;
     this.now = now;
     this.cache = new Map();

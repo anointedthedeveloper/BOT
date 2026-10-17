@@ -36,13 +36,12 @@ export async function connectDatabase({ uri, dbName }, logger, { retries = 5, de
   throw new Error(`Could not connect to MongoDB after ${retries} attempts: ${lastErr?.message}`);
 }
 
-export async function ensureIndexes(db) {
+export async function ensureIndexes(db, prefix = '') {
   await Promise.all([
-    // Message cache is short-lived by design: MongoDB drops documents when expiresAt passes.
-    db.collection('message_cache').createIndexes([
+    db.collection(`${prefix}message_cache`).createIndexes([
       { key: { chatJid: 1, msgId: 1 }, unique: true },
       { key: { expiresAt: 1 }, expireAfterSeconds: 0 },
     ]),
-    db.collection('users').createIndexes([{ key: { role: 1 } }, { key: { banned: 1 }, sparse: true }]),
+    db.collection(`${prefix}users`).createIndexes([{ key: { role: 1 } }, { key: { banned: 1 }, sparse: true }]),
   ]);
 }

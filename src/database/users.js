@@ -6,8 +6,8 @@ export const DEFAULT_PREFS = Object.freeze({
 });
 
 export class UsersRepository {
-  constructor(db, { defaultRetentionDays = 30 } = {}) {
-    this.col = db.collection('users');
+  constructor(db, collection = 'users', { defaultRetentionDays = 30 } = {}) {
+    this.col = db.collection(collection);
     this.defaultRetentionDays = defaultRetentionDays;
   }
 

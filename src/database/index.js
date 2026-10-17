@@ -3,9 +3,11 @@ import { UsersRepository } from './users.js';
 import { ChatsRepository } from './chats.js';
 import { MessageCacheRepository } from './messageCache.js';
 import { BotConfigRepository } from './botConfig.js';
+import { TenantsRepository } from './tenants.js';
 
 export { connectDatabase, ensureIndexes } from './connection.js';
 export { useMongoAuthState } from './authState.js';
+export { TenantsRepository } from './tenants.js';
 
 /** Wires every repository to one database handle. */
 export async function createRepositories(db, config, cipher) {
