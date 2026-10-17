@@ -104,16 +104,11 @@ export async function createApp(config, { logger = createLogger(config), databas
 
   return {
     deps,
-    health,
     shutdown,
     async start() {
       if (config.health.port > 0) {
         const addr = await dashboard.start(config.health.port, config.health.host);
         logger.info({ port: addr.port }, 'server listening — dashboard at /fd');
-      }
-        // dashboard runs on port+1
-        const dashAddr = await dashboard.start(config.health.port + 1, config.health.host);
-        logger.info({ port: dashAddr.port }, 'dashboard listening — signup at /fd');
       }
       await client.start();
       logger.info({ version: config.version, mode: config.bot.mode, commands: registry.unique.length }, 'bot started');
