@@ -73,6 +73,19 @@ const HTML = `<!DOCTYPE html>
   .msg{display:flex;align-items:center;gap:.4rem;font-size:.85rem;color:#888;margin-top:.5rem;min-height:1.3rem}
   .msg.err{color:#f04040}
   .msg.ok{color:#25d366}
+  .tutorial{margin-top:1.25rem;border:1px solid #222;border-radius:10px;overflow:hidden}
+  .tutorial-toggle{width:100%;background:#1a1a1a;border:none;color:#888;font-size:.8rem;padding:.65rem 1rem;text-align:left;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+  .tutorial-toggle:hover{color:#ccc}
+  .tutorial-toggle .arrow{transition:transform .2s;font-style:normal}
+  .tutorial-toggle.open .arrow{transform:rotate(180deg)}
+  .tutorial-body{display:none;padding:.9rem 1rem;background:#111;font-size:.82rem;color:#aaa;line-height:1.6}
+  .tutorial-body.show{display:block}
+  .tutorial-body h3{font-size:.78rem;color:#25d366;text-transform:uppercase;letter-spacing:.06rem;margin:0 0 .5rem}
+  .tutorial-body ol{padding-left:1.2rem;margin:0 0 1rem}
+  .tutorial-body ol:last-child{margin-bottom:0}
+  .tutorial-body li{margin-bottom:.35rem}
+  .tutorial-body b{color:#e0e0e0}
+  .tutorial-body .note{margin-top:.75rem;padding:.5rem .75rem;background:#1a1a1a;border-left:3px solid #333;border-radius:4px;color:#666;font-size:.78rem}
   @media(max-width:360px){.row{flex-direction:column}button{width:100%}}
 </style>
 </head>
@@ -95,6 +108,37 @@ const HTML = `<!DOCTYPE html>
   <div class="sessions" id="sessions-wrap" style="display:none">
     <h2>Active Sessions</h2>
     <div id="sessions-list"></div>
+  </div>
+
+  <div class="tutorial">
+    <button class="tutorial-toggle" onclick="toggleTutorial(this)">
+      <span>How to link your WhatsApp</span>
+      <i class="arrow">&#8964;</i>
+    </button>
+    <div class="tutorial-body">
+      <h3>Option A &mdash; Pairing Code (recommended)</h3>
+      <ol>
+        <li>Enter your WhatsApp number above (with country code, no +).<br><b>Example:</b> 2349012345678</li>
+        <li>Tap <b>Pairing Code</b>.</li>
+        <li>Open WhatsApp on your phone.</li>
+        <li>Go to <b>Settings &rsaquo; Linked Devices &rsaquo; Link a Device</b>.</li>
+        <li>Tap <b>Link with phone number</b> instead of scanning.</li>
+        <li>Enter the 8-character code shown on this page.</li>
+        <li>Wait a few seconds &mdash; the status will change to <b>Connected</b>.</li>
+      </ol>
+      <h3>Option B &mdash; QR Code</h3>
+      <ol>
+        <li>Enter your number and tap <b>Scan QR</b>.</li>
+        <li>Open WhatsApp &rsaquo; <b>Settings &rsaquo; Linked Devices &rsaquo; Link a Device</b>.</li>
+        <li>Point your camera at the QR code shown on this page.</li>
+        <li>The QR refreshes every few seconds &mdash; scan it quickly.</li>
+      </ol>
+      <div class="note">
+        &#9432;&nbsp; You have <b>10 minutes</b> to complete linking before the session expires.<br>
+        &#9432;&nbsp; Your WhatsApp account stays active on your phone &mdash; this links a secondary device.<br>
+        &#9432;&nbsp; Once connected, send <b>,menu</b> to your own number to see all commands.
+      </div>
+    </div>
   </div>
 </div>
 
@@ -180,6 +224,13 @@ async function loadSessions() {
 }
 
 loadSessions();
+
+function toggleTutorial(btn) {
+  var body = btn.nextElementSibling;
+  var isOpen = body.classList.contains('show');
+  body.classList.toggle('show', !isOpen);
+  btn.classList.toggle('open', !isOpen);
+}
 </script>
 </body>
 </html>`;
