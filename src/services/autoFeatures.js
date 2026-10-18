@@ -2,14 +2,32 @@ const STATUS_REACTIONS = ['❤️', '🔥', '👍', '😍', '🎉', '💯'];
 
 /**
  * Hooks into the WhatsApp client to:
- *  1. React to every incoming status update with a random emoji.
- *  2. Send a "composing" typing indicator before the bot sends a reply.
+ *  1. Auto-react to incoming status updates (respects per-user `autoStatusReact` pref in MongoDB).
+ *  2. Send a "composing" typing indicator before every bot reply.
+ *
+ * `deps` is optional — when provided, status-react prefs are read/written to MongoDB.
  */
-export function setupAutoFeatures(client, logger) {
+export function setupAutoFeatures(client, logger, deps = null) {
   // Auto-react to statuses
   client.on('messages.upsert', async ({ messages }) => {
     for (const msg of messages) {
       if (msg.key?.remoteJid !== 'status@broadcast' || msg.key?.fromMe) continue;
+
+      // Check per-poster pref if we have db access (default: react = true)
+      if (deps?.users) {
+        try {
+          const posterJid = msg.key.participant ?? msg.key.remoteJid;
+          const user = await deps.users.get(posterJid);
+          // If the user has explicitly opted out, skip
+          if (user?.prefs?.autoStatusReact === false) continue;
+
+          // First time we see this user — store default pref
+          if (!user || user.prefs?.autoStatusReact === undefined) {
+            await deps.users.setPref(posterJid, 'autoStatusReact', true);
+          }
+        } catch { /* non-fatal */ }
+      }
+
       const emoji = STATUS_REACTIONS[Math.floor(Math.random() * STATUS_REACTIONS.length)];
       try {
         await client.rawSock?.sendMessage('status@broadcast', {

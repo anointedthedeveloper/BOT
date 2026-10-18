@@ -43,7 +43,10 @@ export class ErrorReporter {
     if (t - (this.lastSent.get(fingerprint) ?? -Infinity) < this.dedupeMs) return;
     this.lastSent.set(fingerprint, t);
     this.sentTimes.push(t);
-    const text = `⚠️ *Bot error* (ref ${ref})\nScope: ${context.scope ?? 'unknown'}\n${error.name}: ${error.message.slice(0, 300)}\nSee logs for the stack trace.`;
+    const text = `🚨 *Bot Error* [ref: ${ref}]
+⏰ ${new Date().toISOString()}
+📍 Scope: ${context.scope ?? 'unknown'}
+❌ ${error.name}: ${error.message.slice(0, 300)}${error.stack ? '\n\n```\n' + error.stack.slice(0, 400) + '\n```' : ''}`;
     Promise.resolve(this.notifier(text)).catch((e) => this.logger.warn({ err: e.message }, 'failed to notify owner of error'));
   }
 }

@@ -34,6 +34,7 @@ export default {
       `│ ${p}alive — Check if bot is online`,
       `│ ${p}ping — Check response time`,
       `│ ${p}info — Bot info & uptime`,
+      `│ ${p}owner — Show owner contact`,
       `│ ${p}settings — Manage bot settings`,
       `╰────────────────────`,
       ``,

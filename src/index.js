@@ -24,8 +24,16 @@ process.on('unhandledRejection', (reason) => {
 });
 process.on('uncaughtException', (err) => {
   logger.fatal({ err }, 'uncaught exception');
-  if (app) app.shutdown(1, 'uncaughtException');
-  else process.exit(1);
+  if (app) {
+    app.deps.errorReporter.report(err, { scope: 'uncaughtException' });
+    // give the notifier a moment to send before exiting
+    setTimeout(() => {
+      if (app) app.shutdown(1, 'uncaughtException');
+      else process.exit(1);
+    }, 3000);
+  } else {
+    process.exit(1);
+  }
 });
 
 try {

@@ -48,5 +48,9 @@ export async function ensureIndexes(db, prefix = '') {
       { key: { chatJid: 1, senderJid: 1, ts: 1 } },
       { key: { ts: 1 }, expireAfterSeconds: 8 * 24 * 3600 },
     ]),
+    // tagall_warns: expire offence timestamps handled in-app; index for fast lookup
+    db.collection(`${prefix}tagall_warns`).createIndexes([
+      { key: { chatJid: 1, senderJid: 1 } },
+    ]),
   ]);
 }

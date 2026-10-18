@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import nodePath from 'node:path';
 import qrcode from 'qrcode';
 
-const ROOT = nodePath.resolve(fileURLToPath(import.meta.url), '../../../');
+const ROOT = nodePath.resolve(fileURLToPath(import.meta.url), '../..');  // src/services/dashboard.js -> project root
+console.log('[dashboard] ROOT resolved to:', ROOT); // visible in Render logs to confirm
 
 // SVG icon strings (no emojis)
 const SVG = {
@@ -193,12 +194,14 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger }) 
     }
 
     if (req.method === 'GET' && path === '/image.png') {
+      const filePath = nodePath.join(ROOT, 'image.png');
       try {
-        const buf = await readFile(nodePath.join(ROOT, 'image.png'));
+        const buf = await readFile(filePath);
         res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public,max-age=3600' });
         return res.end(buf);
-      } catch {
-        return send(404, { error: 'not found' });
+      } catch (e) {
+        logger.warn({ filePath, err: e.message }, 'image.png not found');
+        return send(404, { error: 'image not found', tried: filePath });
       }
     }
 

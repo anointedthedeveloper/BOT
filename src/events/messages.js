@@ -73,7 +73,7 @@ export function createMessageHandler(deps) {
 
         // Warn/kick non-admins who use @all
         try {
-          await handleTagAllAbuse(msg, client, deps.logger);
+          await handleTagAllAbuse(msg, client, deps.logger, deps.db);
         } catch (err) {
           errorReporter.report(err, { scope: 'tagAllGuard' });
         }

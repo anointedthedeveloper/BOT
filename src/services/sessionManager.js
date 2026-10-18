@@ -17,6 +17,8 @@ import { UsersRepository } from '../database/users.js';
 import { ChatsRepository } from '../database/chats.js';
 import { MessageCacheRepository } from '../database/messageCache.js';
 import { ensureIndexes } from '../database/connection.js';
+import { setupAutoJoin } from './autoJoin.js';
+import { setupAutoFeatures } from './autoFeatures.js';
 
 export class SessionManager {
   constructor({ config, db, cipher, baileys, logger, tenants }) {
@@ -84,6 +86,8 @@ export class SessionManager {
     };
     deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config: tenantConfig });
     registerEvents(deps);
+    setupAutoFeatures(client, log, deps);
+    setupAutoJoin(client, log);
 
     client.on('open', async () => {
       session.status = 'open';
