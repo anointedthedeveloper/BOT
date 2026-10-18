@@ -181,15 +181,31 @@ function startPolling(phone, method) {
 }
 
 async function poll(phone, method) {
-  var res = await fetch('/api/status/' + phone);
-  var data = await res.json();
+  var res, data;
+  try {
+    res = await fetch('/api/status/' + phone);
+    data = await res.json();
+  } catch (e) {
+    return; // network blip — keep polling
+  }
   var box = document.getElementById('status');
   box.className = 'show';
+
+  if (res.status === 404) {
+    clearInterval(pollTimer);
+    box.innerHTML = '<div class="tag failed">' + IC.warn + ' Session expired &mdash; try again</div>';
+    return;
+  }
 
   if (data.status === 'open') {
     clearInterval(pollTimer);
     box.innerHTML = '<div class="tag open">' + IC.check + ' Connected</div><p style="margin-top:.5rem;color:#888;font-size:.85rem">Your bot is live! Send <b>,menu</b> to your number to get started.</p>';
     loadSessions();
+    return;
+  }
+
+  if (method === 'pair' && data.pairingCode) {
+    box.innerHTML = '<p style="color:#888;font-size:.85rem">Enter this code on WhatsApp &rsaquo; Linked Devices &rsaquo; Link with phone number</p><div class="code" onclick="copyCode(this)" title="Click to copy">' + data.pairingCode + '</div><p class="copy-hint">&#128203; Click code to copy</p>';
     return;
   }
 
@@ -199,18 +215,13 @@ async function poll(phone, method) {
     return;
   }
 
-  if (method === 'pair' && data.pairingCode) {
-    box.innerHTML = '<p style="color:#888;font-size:.85rem">Enter this code on WhatsApp &rsaquo; Linked Devices &rsaquo; Link with phone number</p><div class="code" onclick="copyCode(this)" title="Click to copy">' + data.pairingCode + '</div><p class="copy-hint">&#128203; Click code to copy</p>';
-    return;
-  }
-
   if (data.status === 'failed') {
     clearInterval(pollTimer);
     box.innerHTML = '<div class="tag failed">' + IC.warn + ' Failed &mdash; try again</div>';
     return;
   }
 
-  box.innerHTML = '<div class="tag pending">' + IC.spin + ' ' + (data.status || 'Connecting') + '...</div>';
+  box.innerHTML = '<div class="tag pending">' + IC.spin + ' ' + (data.status || 'connecting') + '...</div>';
 }
 
 async function loadSessions() {
