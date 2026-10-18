@@ -41,6 +41,14 @@ export default {
       `│ ${p}tagguard / ${p}tg on|off — @all protection`,
       `│ ${p}msgcount / ${p}mc [@user|reply] [day|week]`,
       `╰────────────────────`,
+      ``,
+      `╭─「 🎮 *WORD GAME* 」`,
+      `│ ${p}wdg [players] — Start a word game (default 5)`,
+      `│ ${p}join — Join a game lobby`,
+      `│ ${p}wdg start — Force-start (host only)`,
+      `│ ${p}wdg stop — Stop the game`,
+      `│ ${p}wdg lb — Leaderboard`,
+      `╰────────────────────`,
     ];
 
     if (isOwner) {

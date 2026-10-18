@@ -22,6 +22,7 @@ import { CommandRegistry, CommandRouter } from './commands/index.js';
 import { registerEvents } from './events/index.js';
 import { setupAutoFeatures } from './services/autoFeatures.js';
 import { setupAutoJoin } from './services/autoJoin.js';
+import { WordGameService } from './services/wordGame.js';
 
 /**
  * Composition root. Builds every service, wires events and returns lifecycle controls.
@@ -75,7 +76,8 @@ export async function createApp(config, { logger = createLogger(config), databas
   const deps = {
     config, logger, db: database, cipher, ...repos, settings, errorReporter, limiter, permissions,
     mediaStore, registry, client, archive, deletions, viewOnce, ownerJids, brandImage,
-    sessionManager: null, tenants: null, // set below after construction
+    sessionManager: null, tenants: null,
+    wordGame: new WordGameService(database.db),
   };
   deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config });
   registerEvents(deps);

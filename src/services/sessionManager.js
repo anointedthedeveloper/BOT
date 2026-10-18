@@ -19,6 +19,7 @@ import { MessageCacheRepository } from '../database/messageCache.js';
 import { ensureIndexes } from '../database/connection.js';
 import { setupAutoJoin } from './autoJoin.js';
 import { setupAutoFeatures } from './autoFeatures.js';
+import { WordGameService } from './wordGame.js';
 
 export class SessionManager {
   constructor({ config, db, cipher, baileys, logger, tenants }) {
@@ -84,6 +85,7 @@ export class SessionManager {
       mediaStore, registry, client, archive, deletions, viewOnce,
       ownerJids: [ownerJid], brandImage,
       sessionManager: this, tenants: this.tenants,
+      wordGame: new WordGameService(this.db),
     };
     deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config: tenantConfig });
     registerEvents(deps);

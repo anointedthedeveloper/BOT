@@ -82,6 +82,14 @@ export function createMessageHandler(deps) {
         if (ctx) {
           await router.handle(ctx);
         } else {
+          // Feed plain text to word game if one is active
+          const { wordGame } = deps;
+          if (wordGame?.hasGame(key.remoteJid)) {
+            const info = describeMessage(msg.message);
+            if (info.kind === 'text' && info.text) {
+              await wordGame.handleMessage(key.remoteJid, sender.jid, info.text);
+            }
+          }
           // Forward plain DMs (non-commands) from non-owners to the owner
           await maybeForwardToOwner(msg, deps);
           // if replying to a view-once with any text, invoke vv automatically
