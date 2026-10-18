@@ -102,7 +102,8 @@ export class WhatsAppClient {
     this.status = 'connecting';
     this.pairingRequested = false;
     this.lastQr = null;
-    this.lastPairingCode = null;
+    // Only clear pairing code if we haven't already paired (restartRequired reconnect after pairing)
+    if (!this.paired) this.lastPairingCode = null;
     this.auth = await this.authProvider();
     const { Browsers } = this.baileys;
     const makeWASocket = this.baileys.default ?? this.baileys.makeWASocket;
@@ -143,13 +144,14 @@ export class WhatsAppClient {
     const { connection, lastDisconnect, qr, isNewLogin } = update;
 
     if (qr) {
+      this.status = 'qr';
       this.lastQr = qr;
       await this.#emit('qr', { qr });
       await this.#handleQr(qr);
     }
     // WhatsApp signals a brand-new pairing (vs. a reconnect of an existing session) right after
     // the QR/pairing-code handshake succeeds; the actual 'open' event follows a required restart.
-    if (isNewLogin) this.justLinked = true;
+    if (isNewLogin) { this.justLinked = true; this.paired = true; }
     if (connection === 'connecting' && this.status !== 'qr') this.status = 'connecting';
 
     if (connection === 'open') {
@@ -183,6 +185,8 @@ export class WhatsAppClient {
   async #handleQr(qr) {
     const phone = this.config.auth.pairingPhoneNumber;
     if (phone) {
+      // Already paired — restartRequired reconnect, no need for a new code
+      if (this.paired) return;
       // Pairing code: request it once per connection attempt
       if (this.pairingRequested) return;
       this.pairingRequested = true;
@@ -201,7 +205,6 @@ export class WhatsAppClient {
     }
 
     // No phone set — fall back to QR in logs
-    this.status = 'qr';
     const art = await qrcode.toString(qr, { type: 'utf8', small: true, errorCorrectionLevel: 'L', scale: 1 });
     this.output.write(`\n${'─'.repeat(60)}\n  SCAN QR CODE: WhatsApp > Linked Devices > Link a Device\n${'─'.repeat(60)}\n${art}${'─'.repeat(60)}\n`);
     this.logger.info('QR code printed above — scan it with WhatsApp > Linked devices');
@@ -218,6 +221,8 @@ export class WhatsAppClient {
 
   async #handleLogout() {
     this.status = 'logged_out';
+    this.paired = false;
+    this.lastPairingCode = null;
     this.logger.error('session logged out from the phone: clearing stored credentials, a new QR code will be shown');
     await this.#emit('logged-out', {});
     try {
