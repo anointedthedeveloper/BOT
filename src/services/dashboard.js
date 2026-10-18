@@ -61,7 +61,9 @@ const HTML = `<!DOCTYPE html>
   #status{margin-top:1.25rem;padding:1rem;border-radius:10px;background:#1a1a1a;border:1px solid #222;display:none;text-align:center}
   #status.show{display:block}
   #status img{max-width:min(240px,80vw);margin:.75rem auto;display:block;border-radius:8px}
-  .code{font-size:clamp(1.4rem,6vw,2rem);font-weight:700;letter-spacing:.3rem;color:#25d366;margin:.5rem 0;word-break:break-all}
+  .code{font-size:clamp(1.4rem,6vw,2rem);font-weight:700;letter-spacing:.3rem;color:#25d366;margin:.5rem 0;word-break:break-all;cursor:pointer;user-select:all;padding:.4rem .6rem;border-radius:6px;transition:background .15s}
+  .code:hover{background:#1a3a2a}
+  .copy-hint{font-size:.72rem;color:#555;margin-top:.25rem}
   .tag{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .65rem;border-radius:20px;font-size:.75rem;font-weight:600}
   .tag.open{background:#1a3a2a;color:#25d366}
   .tag.pending{background:#2a2a1a;color:#f0c040}
@@ -198,7 +200,7 @@ async function poll(phone, method) {
   }
 
   if (method === 'pair' && data.pairingCode) {
-    box.innerHTML = '<p style="color:#888;font-size:.85rem">Enter this code on WhatsApp &rsaquo; Linked Devices &rsaquo; Link with phone number</p><div class="code">' + data.pairingCode + '</div>';
+    box.innerHTML = '<p style="color:#888;font-size:.85rem">Enter this code on WhatsApp &rsaquo; Linked Devices &rsaquo; Link with phone number</p><div class="code" onclick="copyCode(this)" title="Click to copy">' + data.pairingCode + '</div><p class="copy-hint">&#128203; Click code to copy</p>';
     return;
   }
 
@@ -231,11 +233,28 @@ function toggleTutorial(btn) {
   body.classList.toggle('show', !isOpen);
   btn.classList.toggle('open', !isOpen);
 }
+
+function copyCode(el) {
+  var code = el.innerText.replace(/[^A-Z0-9]/g, '');
+  if (!navigator.clipboard) {
+    // fallback for older browsers
+    var ta = document.createElement('textarea');
+    ta.value = code;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  } else {
+    navigator.clipboard.writeText(code);
+  }
+  var hint = el.nextElementSibling;
+  if (hint) { hint.innerText = '\u2705 Copied!'; setTimeout(function(){ hint.innerText = '\u{1F4CB} Click code to copy'; }, 2000); }
+}
 </script>
 </body>
 </html>`;
 
-export function createDashboard({ sessionManager, tenants, getStatus, logger }) {
+export function createDashboard({ sessionManager, tenants, getStatus, logger, db }) {
   const server = http.createServer(async (req, res) => {
     const send = (code, body, ct = 'application/json') => {
       res.writeHead(code, { 'content-type': ct, 'cache-control': 'no-store' });
@@ -284,14 +303,28 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger }) 
         const { phone, method } = JSON.parse(body);
         const digits = String(phone).replace(/\D/g, '');
         if (!digits || digits.length < 7) return send(400, { error: 'Invalid phone number' });
+
+        // If a previous session exists and is not open, stop it and clear stale auth
         const existing = await tenants.get(digits);
-        if (!existing) await tenants.create(digits);
+        const existingSession = sessionManager.getSession(digits);
+        if (existingSession && existingSession.status !== 'open') {
+          await sessionManager.stopSession(digits);
+        }
+        if (!existing) {
+          await tenants.create(digits);
+        } else if (existing.status === 'failed' || existing.status === 'pending') {
+          // Clear stale auth so Baileys starts fresh instead of immediately disconnecting
+          await tenants.setStatus(digits, 'pending');
+          try { await db.collection(`wa_auth_${digits}`).deleteMany({}); } catch { /* non-fatal */ }
+        }
+
         const pairingPhone = method === 'pair' ? digits : null;
         sessionManager.startSession(digits, { pairingPhone }).catch(err =>
           logger.error({ err, phone: digits }, 'session start failed')
         );
         return send(200, { ok: true });
       } catch (err) {
+        logger.error({ err }, 'signup error');
         return send(400, { error: 'Bad request' });
       }
     }
