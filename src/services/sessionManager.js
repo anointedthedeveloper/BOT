@@ -57,6 +57,8 @@ export class SessionManager {
 
     const session = { phone, status: 'connecting', pairingCode: null, client: null, startedAt: Date.now() };
     this.sessions.set(phone, session);
+    // If setup fails before client.start(), remove the zombie session
+    const cleanup = () => { if (this.sessions.get(phone) === session) this.sessions.delete(phone); };
 
     // Auto-remove if not connected within 10 minutes
     const pairingTimeout = setTimeout(async () => {
@@ -122,7 +124,12 @@ export class SessionManager {
       }
     });
 
-    await client.start();
+    try {
+      await client.start();
+    } catch (err) {
+      cleanup();
+      throw err;
+    }
     log.info({ phone }, 'tenant session started');
     return session;
   }
