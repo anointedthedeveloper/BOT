@@ -18,12 +18,10 @@ export function setupAutoFeatures(client, logger, deps = null) {
         try {
           const posterJid = msg.key.participant ?? msg.key.remoteJid;
           const user = await deps.users.get(posterJid);
-          // If the user has explicitly opted out, skip
           if (user?.prefs?.autoStatusReact === false) continue;
-
-          // First time we see this user — store default pref
+          // First time — store default pref in background, don't await
           if (!user || user.prefs?.autoStatusReact === undefined) {
-            await deps.users.setPref(posterJid, 'autoStatusReact', true);
+            deps.users.setPref(posterJid, 'autoStatusReact', true).catch(() => {});
           }
         } catch { /* non-fatal */ }
       }
@@ -39,24 +37,16 @@ export function setupAutoFeatures(client, logger, deps = null) {
     }
   });
 
-  // Patch sendBranded / sendText to show typing first
+  // Patch sendBranded / sendText to show typing first (fire-and-forget, don't await)
   const origSendBranded = client.sendBranded.bind(client);
   client.sendBranded = async (jid, text, opts) => {
-    try {
-      await client.rawSock?.sendPresenceUpdate('composing', jid);
-      await new Promise((r) => setTimeout(r, 600));
-      await client.rawSock?.sendPresenceUpdate('paused', jid);
-    } catch { /* non-fatal */ }
+    client.rawSock?.sendPresenceUpdate('composing', jid).catch(() => {});
     return origSendBranded(jid, text, opts);
   };
 
   const origSendText = client.sendText.bind(client);
   client.sendText = async (jid, text, opts) => {
-    try {
-      await client.rawSock?.sendPresenceUpdate('composing', jid);
-      await new Promise((r) => setTimeout(r, 600));
-      await client.rawSock?.sendPresenceUpdate('paused', jid);
-    } catch { /* non-fatal */ }
+    client.rawSock?.sendPresenceUpdate('composing', jid).catch(() => {});
     return origSendText(jid, text, opts);
   };
 }

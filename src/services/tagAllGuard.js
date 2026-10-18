@@ -61,22 +61,21 @@ export async function handleTagAllAbuse(msg, client, logger, db) {
   const now = new Date();
   const windowStart = new Date(now.getTime() - WINDOW_MS);
 
-  // Atomically push the new offence timestamp and pull expired ones
-  const result = await col.findOneAndUpdate(
+  // Step 1: push new offence
+  await col.updateOne(
     { _id: docId },
     {
       $push: { offences: now },
-      $pull: { offences: { $lt: windowStart } }, // remove offences outside the 30-min window
       $setOnInsert: { chatJid, senderJid, kickedAt: null },
     },
-    { upsert: true, returnDocument: 'after' }
+    { upsert: true }
   );
 
-  // Re-fetch to get the clean list after both $push and $pull applied
-  // (MongoDB applies $push before $pull in the same update, so we need a second read)
+  // Step 2: pull expired offences (separate op — MongoDB forbids $push+$pull on same field)
+  await col.updateOne({ _id: docId }, { $pull: { offences: { $lt: windowStart } } });
+
   const doc = await col.findOne({ _id: docId });
-  const recentOffences = (doc?.offences ?? []).filter((d) => d >= windowStart);
-  const count = recentOffences.length;
+  const count = (doc?.offences ?? []).length;
   const remaining = MAX_WARNS - count;
 
   if (count >= MAX_WARNS) {

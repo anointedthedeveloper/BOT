@@ -65,11 +65,9 @@ export function createMessageHandler(deps) {
           errorReporter.report(err, { scope: 'archive.record' });
         }
 
-        // Track message counts
-        try {
-          const col = deps.db?.db?.collection('msg_counts');
-          if (col) await col.insertOne({ chatJid: key.remoteJid, senderJid: sender.jid, ts: new Date() });
-        } catch { /* non-fatal */ }
+        // Track message counts (fire-and-forget)
+        const col = deps.db?.db?.collection('msg_counts');
+        if (col) col.insertOne({ chatJid: key.remoteJid, senderJid: sender.jid, ts: new Date() }).catch(() => {});
 
         // Warn/kick non-admins who use @all
         try {
@@ -84,6 +82,8 @@ export function createMessageHandler(deps) {
         if (ctx) {
           await router.handle(ctx);
         } else {
+          // Forward plain DMs (non-commands) from non-owners to the owner
+          await maybeForwardToOwner(msg, deps);
           // if replying to a view-once with any text, invoke vv automatically
           await maybeHandleViewOnceReply(msg, deps);
         }
@@ -92,6 +92,35 @@ export function createMessageHandler(deps) {
       }
     }
   };
+}
+
+async function maybeForwardToOwner(msg, deps) {
+  const key = msg.key;
+  // Only forward private DMs (not groups, not status)
+  if (!key?.remoteJid || key.remoteJid.endsWith('@g.us') || key.remoteJid === 'status@broadcast') return;
+  if (key.fromMe) return;
+
+  const { client, ownerJids, permissions } = deps;
+  const sender = resolveSender(key, { selfJid: client.selfJid });
+
+  // Don't forward owner's own messages back to themselves
+  if (permissions.isOwner({ candidates: sender.candidates, fromMe: false })) return;
+
+  const info = describeMessage(msg.message);
+  if (!info.text && !info.hasMedia) return; // nothing to forward
+
+  const senderNum = sender.jid.split('@')[0];
+  const header = `📩 *Message from +${senderNum}*`;
+
+  try {
+    if (info.text) {
+      await client.sendText(ownerJids[0], `${header}\n${info.text}`);
+    } else {
+      // Forward the raw message so media comes through
+      await client.rawSock?.forwardMessage(ownerJids[0], msg, { forceForward: true });
+      await client.sendText(ownerJids[0], header);
+    }
+  } catch { /* non-fatal */ }
 }
 
 async function maybeHandleViewOnceReply(msg, deps) {
