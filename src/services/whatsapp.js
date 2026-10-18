@@ -179,16 +179,20 @@ export class WhatsAppClient {
   }
 
   async #handleQr(qr) {
-    if (this.pairingRequested) return;
-
     const phone = this.config.auth.pairingPhoneNumber;
     if (phone) {
+      // Pairing code: request it once per connection attempt
+      if (this.pairingRequested) return;
       this.pairingRequested = true;
       try {
         const code = await this.sock.requestPairingCode(phone);
-        this.output.write(`\n${'─'.repeat(60)}\n  PAIRING CODE: ${code}\n  On your phone: Settings > Linked Devices > Link with phone number\n${'─'.repeat(60)}\n\n`);
+        const formatted = code.match(/.{1,4}/g)?.join('-') ?? code;
+        this.lastPairingCode = formatted;
+        await this.#emit('pairing-code', { code: formatted });
+        this.output.write(`\n${'─'.repeat(60)}\n  PAIRING CODE: ${formatted}\n  On your phone: Settings > Linked Devices > Link with phone number\n${'─'.repeat(60)}\n\n`);
       } catch (err) {
         this.pairingRequested = false;
+        this.logger.warn({ err: err.message }, 'requestPairingCode failed — will retry on next QR');
         this.onError(err, { scope: 'pairing' });
       }
       return;
@@ -282,6 +286,10 @@ export class WhatsAppClient {
 
   get currentQr() {
     return this.status === 'open' ? null : (this.lastQr ?? null);
+  }
+
+  get currentPairingCode() {
+    return this.status === 'open' ? null : (this.lastPairingCode ?? null);
   }
 
   #requireOpen() {

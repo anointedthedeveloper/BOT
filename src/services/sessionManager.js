@@ -67,18 +67,17 @@ export class SessionManager {
     }, 10 * 60 * 1000);
     pairingTimeout.unref();
     session.pairingTimeout = pairingTimeout;
-    const captureOutput = {
-      write: (text) => {
-        const m = text.match(/PAIRING CODE: ([A-Z0-9]+)/);
-        if (m) { session.pairingCode = m[1]; session.status = 'pairing'; }
-      },
-    };
 
     const client = new WhatsAppClient({
       config: tenantConfig, logger: log, baileys: this.baileys,
       onError: (err, ctx) => errorReporter.report(err, ctx),
       authProvider: async () => useMongoAuthState(this.db, { baileys: this.baileys, cipher: this.cipher, collection: `wa_auth_${phone}` }),
-      output: captureOutput,
+    });
+
+    // Keep session.pairingCode in sync from the client directly
+    client.on('pairing-code', ({ code }) => {
+      session.pairingCode = code;
+      session.status = 'pairing';
     });
 
     session.client = client;

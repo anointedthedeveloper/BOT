@@ -300,7 +300,8 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger }) 
       const phone = path.split('/').pop().split(':')[0];
       const session = sessionManager.getSession(phone);
       if (!session) return send(404, { error: 'Not found' });
-      const out = { status: session.status, pairingCode: session.pairingCode ?? null, qr: null };
+      const pairingCode = session.pairingCode ?? session.client?.currentPairingCode ?? null;
+      const out = { status: session.status, pairingCode, qr: null };
       const rawQr = session.client?.currentQr ?? null;
       if (rawQr) {
         try { out.qr = await qrcode.toDataURL(rawQr, { width: 256, margin: 1 }); } catch {}
