@@ -188,7 +188,7 @@ async function poll(phone, method) {
 
   if (data.status === 'open') {
     clearInterval(pollTimer);
-    box.innerHTML = '<div class="tag open">' + IC.check + ' Connected</div><p style="margin-top:.5rem;color:#888;font-size:.85rem">Your bot is live! Send <b>,menu</b> to your number.</p>';
+    box.innerHTML = '<div class="tag open">' + IC.check + ' Connected</div><p style="margin-top:.5rem;color:#888;font-size:.85rem">Your bot is live! Send <b>,menu</b> to your number to get started.</p>';
     loadSessions();
     return;
   }
@@ -254,7 +254,9 @@ function copyCode(el) {
 </body>
 </html>`;
 
-export function createDashboard({ sessionManager, tenants, getStatus, logger, db }) {
+export function createDashboard({ sessionManager, tenants, getStatus, logger, db, botName = 'WhatsApp Bot' }) {
+  const safeTitle = botName.replace(/[<>"'&]/g, (c) => ({ '<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','&':'&amp;' }[c]));
+  const PAGE = HTML.replace(/WhatsApp Bot/g, safeTitle);
   const server = http.createServer(async (req, res) => {
     const send = (code, body, ct = 'application/json') => {
       res.writeHead(code, { 'content-type': ct, 'cache-control': 'no-store' });
@@ -271,7 +273,7 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger, db
     }
 
     if (req.method === 'GET' && (path === '/fd' || path === '/fd/')) {
-      return send(200, HTML, 'text/html');
+      return send(200, PAGE, 'text/html');
     }
 
     if (req.method === 'GET' && path === '/image.png') {
@@ -304,18 +306,25 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger, db
         const digits = String(phone).replace(/\D/g, '');
         if (!digits || digits.length < 7) return send(400, { error: 'Invalid phone number' });
 
-        // If a previous session exists and is not open, stop it and clear stale auth
         const existing = await tenants.get(digits);
+        // Stop any existing non-open in-memory session
         const existingSession = sessionManager.getSession(digits);
         if (existingSession && existingSession.status !== 'open') {
           await sessionManager.stopSession(digits);
         }
+
         if (!existing) {
           await tenants.create(digits);
-        } else if (existing.status === 'failed' || existing.status === 'pending') {
-          // Clear stale auth so Baileys starts fresh instead of immediately disconnecting
-          await tenants.setStatus(digits, 'pending');
-          try { await db.collection(`wa_auth_${digits}`).deleteMany({}); } catch { /* non-fatal */ }
+        } else {
+          // Always clear stale auth unless the session is currently open in memory
+          const liveSession = sessionManager.getSession(digits);
+          const isLiveAndOpen = liveSession?.status === 'open';
+          if (!isLiveAndOpen) {
+            await tenants.setStatus(digits, 'pending');
+            try { await db.collection(`wa_auth_${digits}`).deleteMany({}); } catch { /* non-fatal */ }
+          } else {
+            return send(200, { ok: true, already: true });
+          }
         }
 
         const pairingPhone = method === 'pair' ? digits : null;

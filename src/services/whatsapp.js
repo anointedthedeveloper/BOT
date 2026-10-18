@@ -18,7 +18,7 @@ export function decideReconnect(statusCode, attempt, random = Math.random) {
     case DISCONNECT.connectionReplaced:
       return { reconnect: false, reason: 'connection_replaced' };
     case DISCONNECT.forbidden:
-      return { reconnect: false, reason: 'forbidden' };
+      return { reconnect: false, resetSession: true, reason: 'forbidden' };
     case DISCONNECT.restartRequired:
       return { reconnect: true, delayMs: 0, reason: 'restart_required' }; // normal right after QR pairing
     default: {

@@ -110,6 +110,7 @@ export async function createApp(config, { logger = createLogger(config), databas
     getStatus: async () => ({ mongo: await database.ping(), uptimeSec: Math.round(process.uptime()) }),
     logger,
     db: database.db,
+    botName: config.bot.name,
   });
 
   return {
