@@ -58,6 +58,16 @@ export class RuntimeSettings {
     this.overrides.autoViewStatus = Boolean(enabled);
   }
 
+  get botMode() {
+    return this.overrides.botMode ?? this.config.bot.mode;
+  }
+
+  async setBotMode(mode) {
+    if (!['public', 'private'].includes(mode)) throw new Error('Mode must be public or private');
+    await this.repo.set({ botMode: mode });
+    this.overrides.botMode = mode;
+  }
+
   async setPrefix(prefix) {
     if (!PREFIX_PATTERN.test(prefix)) throw new Error('Prefix must be 1-3 symbol characters (no letters, digits or spaces), e.g. , ! . #');
     await this.repo.set({ prefix });
