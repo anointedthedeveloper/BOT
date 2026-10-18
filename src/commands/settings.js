@@ -4,84 +4,92 @@ export default {
   name: 'settings',
   category: 'Settings',
   description: 'Manage bot features',
-  usage: 'settings [delete on|off | sticker on|off | autoviewstatus on|off | typing on|off | statusreact on|off | status]',
+  usage: 'settings [subcommand] [on|off]',
   role: 'owner',
-  details: [
-    '{p}settings — compact overview of what\'s on.',
-    '{p}settings delete on|off — same switch as {p}delete on|off.',
-    '{p}settings sticker on|off — enable or disable the {p}sticker command.',
-    '{p}settings autoviewstatus on|off — auto-read WhatsApp statuses.',
-    '{p}settings typing on|off — show typing indicator before replies.',
-    '{p}settings statusreact on|off — auto-react to WhatsApp statuses.',
-    '{p}settings status — current values.',
-  ].join('\n'),
   async execute(ctx) {
-    const { settings, config, archive } = ctx.deps;
+    const { settings, config, archive, users } = ctx.deps;
+    const p = ctx.prefix;
     const [sub, arg] = ctx.args.map((a) => a.toLowerCase());
 
-    const summary = () => {
-      const mode = settings.defaultArchiveMode;
-      return [
-        `• delete: *${mode === 'off' ? 'OFF' : `ON (${mode})`}*`,
-        `• sticker: *${settings.stickerEnabled ? 'ENABLED' : 'DISABLED'}*`,
-        `• autoviewstatus: *${settings.autoViewStatus ? 'ON' : 'OFF'}*`,
-        `• typing: *${settings.typingIndicator ? 'ON' : 'OFF'}*`,
-        `• statusreact: *${ctx.deps.users ? 'see ,settings statusreact' : 'N/A'}*`,
-      ].join('\n');
-    };
+    // ── No subcommand: show full settings panel ───────────────────────────
+    if (!sub || sub === 'status') {
+      const delMode = settings.defaultArchiveMode;
+      const botMode = settings.botMode ?? config.bot.mode;
 
-    if (!sub) {
+      // Fetch statusreact pref for this owner
+      const ownerUser = await users.get(ctx.sender.jid).catch(() => null);
+      const statusReact = ownerUser?.prefs?.autoStatusReact === true;
+
       return ctx.reply([
-        '*Settings*',
-        summary(),
-        '',
-        `${ctx.prefix}settings delete on|off`,
-        `${ctx.prefix}settings sticker on|off`,
-        `${ctx.prefix}settings status`,
+        `╭─「 ⚙️ *Bot Settings* 」`,
+        `│`,
+        `│ 🗑️ *Deleted Messages*`,
+        `│   • status: *${delMode === 'off' ? 'OFF' : `ON (${delMode})`}*`,
+        `│   ${p}settings delete on|off`,
+        `│`,
+        `│ 🎨 *Sticker*`,
+        `│   • status: *${settings.stickerEnabled ? 'ENABLED' : 'DISABLED'}*`,
+        `│   ${p}settings sticker on|off`,
+        `│`,
+        `│ 👁️ *Auto View Status*`,
+        `│   • status: *${settings.autoViewStatus ? 'ON' : 'OFF'}*`,
+        `│   ${p}settings autoviewstatus on|off`,
+        `│`,
+        `│ ⌨️ *Typing Indicator*`,
+        `│   • status: *${settings.typingIndicator ? 'ON' : 'OFF'}*`,
+        `│   ${p}settings typing on|off`,
+        `│`,
+        `│ 💬 *Auto Status React*`,
+        `│   • status: *${statusReact ? 'ON' : 'OFF'}*`,
+        `│   ${p}settings statusreact on|off`,
+        `│`,
+        `│ 🔒 *Bot Mode*`,
+        `│   • status: *${botMode}*`,
+        `│   ${p}publ — public  |  ${p}priv — private`,
+        `╰────────────────────`,
       ].join('\n'));
     }
-    if (sub === 'status') {
-      return ctx.reply(['*Current settings*', summary()].join('\n'));
-    }
+
+    // ── Subcommands ───────────────────────────────────────────────────────
     if (sub === 'delete') {
-      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${ctx.prefix}settings delete on|off`);
+      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${p}settings delete on|off`);
       if (arg === 'on') {
         if (!config.privacy.allowMediaCaching && !config.privacy.allowContentLogging) {
-          throw new UserError('The operator has disabled both content and media logging, so there is nothing this can turn on.');
+          throw new UserError('The operator has disabled both content and media logging.');
         }
         const mode = config.privacy.allowMediaCaching ? 'media' : 'full';
-        try {
-          await settings.setDefaultArchiveMode(mode);
-        } catch (e) {
-          throw new UserError(e.message);
-        }
-        return ctx.reply(`✅ delete: ON (${mode}).`);
+        try { await settings.setDefaultArchiveMode(mode); } catch (e) { throw new UserError(e.message); }
+        return ctx.reply(`✅ Deleted message monitoring: *ON (${mode})*`);
       }
       await settings.setDefaultArchiveMode('off');
       await archive.disableAndWipe();
-      return ctx.reply('✅ delete: OFF. Cached data wiped.');
+      return ctx.reply('✅ Deleted message monitoring: *OFF*. Cached data wiped.');
     }
+
     if (sub === 'sticker') {
-      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${ctx.prefix}settings sticker on|off`);
+      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${p}settings sticker on|off`);
       await settings.setStickerEnabled(arg === 'on');
-      return ctx.reply(`✅ sticker: ${arg === 'on' ? 'ENABLED' : 'DISABLED'}.`);
+      return ctx.reply(`✅ Sticker: *${arg === 'on' ? 'ENABLED' : 'DISABLED'}*`);
     }
+
     if (sub === 'autoviewstatus') {
-      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${ctx.prefix}settings autoviewstatus on|off`);
+      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${p}settings autoviewstatus on|off`);
       await settings.setAutoViewStatus(arg === 'on');
-      return ctx.reply(`✅ autoviewstatus: ${arg === 'on' ? 'ON' : 'OFF'}.`);
+      return ctx.reply(`✅ Auto view status: *${arg === 'on' ? 'ON' : 'OFF'}*`);
     }
+
     if (sub === 'typing') {
-      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${ctx.prefix}settings typing on|off`);
+      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${p}settings typing on|off`);
       await settings.setTypingIndicator(arg === 'on');
-      return ctx.reply(`✅ typing indicator: ${arg === 'on' ? 'ON' : 'OFF'}.`);
+      return ctx.reply(`✅ Typing indicator: *${arg === 'on' ? 'ON' : 'OFF'}*`);
     }
+
     if (sub === 'statusreact') {
-      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${ctx.prefix}settings statusreact on|off`);
-      // This is a per-bot setting stored in bot config
-      await ctx.deps.users.setPref(ctx.sender.jid, 'autoStatusReact', arg === 'on');
-      return ctx.reply(`✅ auto status react: ${arg === 'on' ? 'ON' : 'OFF'}.`);
+      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${p}settings statusreact on|off`);
+      await users.setPref(ctx.sender.jid, 'autoStatusReact', arg === 'on');
+      return ctx.reply(`✅ Auto status react: *${arg === 'on' ? 'ON' : 'OFF'}*`);
     }
-    throw new UserError(`Usage: ${ctx.prefix}${this.usage}`);
+
+    throw new UserError(`Usage: ${p}settings [delete|sticker|autoviewstatus|typing|statusreact] on|off`);
   },
 };
