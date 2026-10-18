@@ -17,9 +17,11 @@ export default {
 
     const participants = meta.participants ?? [];
     const mentions = participants.map((p) => p.id);
-    // Use zero-width space so mentions are silent (no visible @number text)
+    // argText becomes the message body; zero-width space if no message given (silent ping)
     const text = ctx.argText || '\u200b';
 
-    await client.rawSock.sendMessage(ctx.chatJid, { text, mentions });
+    const sent = await client.rawSock.sendMessage(ctx.chatJid, { text, mentions });
+    // Track so the bot doesn't process its own message as a command
+    if (sent?.key?.id) client.sentIds?.add(sent.key.id);
   },
 };
