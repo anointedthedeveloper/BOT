@@ -210,6 +210,12 @@ async function poll(phone, method) {
     return;
   }
 
+  if (method === 'pair' && data.pairingError) {
+    clearInterval(pollTimer);
+    box.innerHTML = '<div class="tag failed">' + IC.warn + ' Pairing failed: ' + data.pairingError + '</div><p style="margin-top:.5rem;color:#666;font-size:.8rem">Try again &mdash; make sure the number is registered on WhatsApp.</p>';
+    return;
+  }
+
   if (method === 'qr' && data.qr) {
     box.innerHTML = '<p style="color:#888;font-size:.85rem;margin-bottom:.5rem">Scan with WhatsApp &rsaquo; Linked Devices</p><img id="qrimg" src="" alt="QR Code"/><p style="color:#555;font-size:.75rem">Auto-refreshes every 2.5s</p>';
     document.getElementById('qrimg').src = data.qr;
@@ -355,7 +361,7 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger, db
       const session = sessionManager.getSession(phone);
       if (!session) return send(404, { error: 'Not found' });
       const pairingCode = session.pairingCode ?? session.client?.currentPairingCode ?? null;
-      const out = { status: session.status, pairingCode, qr: null };
+      const out = { status: session.status, pairingCode, pairingError: session.pairingError ?? null, qr: null };
       const rawQr = session.client?.currentQr ?? null;
       if (rawQr) {
         try { out.qr = await qrcode.toDataURL(rawQr, { width: 256, margin: 1 }); } catch {}

@@ -199,6 +199,7 @@ export class WhatsAppClient {
       } catch (err) {
         this.pairingRequested = false;
         this.logger.warn({ err: err.message }, 'requestPairingCode failed — will retry on next QR');
+        await this.#emit('pairing-error', { message: err.message });
         this.onError(err, { scope: 'pairing' });
       }
       return;

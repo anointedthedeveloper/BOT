@@ -80,9 +80,13 @@ export class SessionManager {
     client.on('pairing-code', ({ code }) => {
       session.pairingCode = code;
       session.status = 'pairing';
+      session.pairingError = null;
     });
     client.on('qr', () => {
       if (session.status !== 'open') session.status = 'qr';
+    });
+    client.on('pairing-error', ({ message }) => {
+      session.pairingError = message;
     });
 
     session.client = client;
