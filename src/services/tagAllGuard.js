@@ -1,13 +1,21 @@
-const MAX_WARNS = 5;
+const MAX_WARNS = 7;
 const WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 const TAG_ALL_PATTERNS = [/@all\b/i, /@everyone\b/i];
 
-/**
- * Gets or creates the warn record for a user in a group from MongoDB.
- * Document shape: { _id: `${chatJid}:${senderJid}`, offences: [Date, ...], kickedAt: Date|null }
- */
-async function getWarnCol(db) {
-  return db.db.collection('tagall_warns');
+function groupSettingsCol(db) { return db.db.collection('group_settings'); }
+function warnCol(db) { return db.db.collection('tagall_warns'); }
+
+export async function isTagGuardEnabled(chatJid, db) {
+  const doc = await groupSettingsCol(db).findOne({ _id: chatJid });
+  return doc?.tagGuard === true;
+}
+
+export async function setTagGuard(chatJid, enabled, db) {
+  await groupSettingsCol(db).updateOne(
+    { _id: chatJid },
+    { $set: { tagGuard: enabled } },
+    { upsert: true }
+  );
 }
 
 /**
@@ -28,6 +36,10 @@ export async function handleTagAllAbuse(msg, client, logger, db) {
   if (!TAG_ALL_PATTERNS.some((p) => p.test(text))) return false;
 
   const chatJid = key.remoteJid;
+
+  // Only active if an admin has turned it on for this group
+  if (!(await isTagGuardEnabled(chatJid, db))) return false;
+
   const senderJid = key.participant ?? key.remoteJid;
 
   // Check if sender is admin
@@ -44,7 +56,7 @@ export async function handleTagAllAbuse(msg, client, logger, db) {
   if (!participant) return false;
   if (participant.admin === 'admin' || participant.admin === 'superadmin') return false;
 
-  const col = await getWarnCol(db);
+  const col = warnCol(db);
   const docId = `${chatJid}:${senderJid}`;
   const now = new Date();
   const windowStart = new Date(now.getTime() - WINDOW_MS);

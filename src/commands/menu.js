@@ -40,6 +40,7 @@ export default {
       ``,
       `╭─「 👥 *GROUP TOOLS* 」`,
       `│ ${p}tagall / ${p}tga [msg] — Tag all members`,
+      `│ ${p}tagguard / ${p}tg on|off — @all protection (admin)`,
       `│ ${p}msgcount / ${p}mc [@user|reply] [day|week]`,
       `╰────────────────────`,
     ];

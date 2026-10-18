@@ -4,8 +4,10 @@ import { fileURLToPath } from 'node:url';
 import nodePath from 'node:path';
 import qrcode from 'qrcode';
 
-const ROOT = nodePath.resolve(fileURLToPath(import.meta.url), '../..');  // src/services/dashboard.js -> project root
-console.log('[dashboard] ROOT resolved to:', ROOT); // visible in Render logs to confirm
+// import.meta.url = file:///…/src/services/dashboard.js
+// ../../  = project root  (services -> src -> root)
+const ROOT = nodePath.resolve(nodePath.dirname(fileURLToPath(import.meta.url)), '../..');
+console.log('[dashboard] ROOT:', ROOT);
 
 // SVG icon strings (no emojis)
 const SVG = {
