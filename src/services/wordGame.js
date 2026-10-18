@@ -67,7 +67,8 @@ export class WordGameService {
    * Called by ,wdg command. Returns a message to send.
    */
   startLobby(chatJid, starterJid, maxPlayers, sendFn) {
-    if (this.games.has(chatJid)) return '⚠️ A game is already running. Type ,join to join or wait for it to finish.';
+    if (this.games.has(chatJid)) return '⚠️ A game is already running here. Type ,join to join or wait for it to finish.';
+    if (this.games.size > 0) return '⚠️ A game is already running in another chat. Only one game at a time is allowed.';
     const max = Math.max(2, Math.min(10, maxPlayers || 5));
     const game = {
       chatJid,
