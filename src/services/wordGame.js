@@ -1,18 +1,3 @@
-/**
- * Word Game Service
- *
- * Rules:
- * - Starter invokes ,wdg [maxPlayers] — they auto-join as player 1
- * - Others type ,join to join (up to maxPlayers, default 5)
- * - Game starts when maxPlayers joined OR starter types ,start after ≥2 players
- * - Each round: bot picks a required starting letter, current player must reply
- *   with a real word starting with that letter, of at least `minLength` chars
- * - Round 1: minLength=3, timer=45s. Each completed round: minLength+1, timer-2s (floor 20s)
- * - Wrong word / timeout = player loses a life (3 lives total). 0 lives = eliminated.
- * - Last player standing wins. If all remaining players are eliminated in same round, no winner.
- * - Leaderboard stored in MongoDB collection `word_game_leaderboard`
- */
-
 import { normalizeJid } from '../utils/jid.js';
 
 const LIVES = 3;
@@ -20,77 +5,88 @@ const BASE_TIMER_MS = 45_000;
 const MIN_TIMER_MS = 20_000;
 const TIMER_REDUCTION_MS = 2_000;
 const BASE_MIN_LENGTH = 3;
-const JOIN_WINDOW_MS = 60_000; // 60s to join before game auto-starts
+const JOIN_WINDOW_MS = 60_000;
+const WARN_BEFORE_MS = 15_000; // warn when this many ms remain
 
-// Simple English word list check via Free Dictionary API
+// Check word validity using multiple sources — word is rejected only if ALL sources say no
 async function isRealWord(word) {
-  try {
-    const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word.toLowerCase())}`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    return res.ok;
-  } catch {
-    return true; // network issue — give benefit of the doubt
-  }
+  const w = word.toLowerCase();
+
+  // Source 1: Free Dictionary API (strict — headwords only)
+  const dict = fetch(
+    `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(w)}`,
+    { signal: AbortSignal.timeout(6000) },
+  ).then((r) => r.ok).catch(() => null); // null = inconclusive
+
+  // Source 2: Datamuse — returns matches if the word exists in its corpus
+  const datamuse = fetch(
+    `https://api.datamuse.com/words?sp=${encodeURIComponent(w)}&max=1`,
+    { signal: AbortSignal.timeout(6000) },
+  ).then(async (r) => {
+    if (!r.ok) return null;
+    const data = await r.json();
+    // Datamuse returns the word itself as first result if it's a known word
+    return Array.isArray(data) && data.length > 0 && data[0].word === w;
+  }).catch(() => null);
+
+  const [d, dm] = await Promise.all([dict, datamuse]);
+
+  // If either source confirms it — accept
+  if (d === true || dm === true) return true;
+  // If both are inconclusive (network issues) — give benefit of the doubt
+  if (d === null && dm === null) return true;
+  // If one confirms it's invalid and the other is inconclusive — reject
+  // Both must say false to reject
+  if (d === false && dm === false) return false;
+  // One false, one inconclusive — still accept (lenient)
+  return true;
 }
 
 function mask(jid) {
-  const num = jid.split('@')[0];
+  const num = jid.split('@')[0].split(':')[0];
   return `+${num.slice(0, 3)}****${num.slice(-2)}`;
 }
 
 function randomLetter() {
-  return String.fromCharCode(97 + Math.floor(Math.random() * 26));
+  // avoid rare letters x, z, q to keep game fair
+  const letters = 'abcdefghijklmnoprstuvwy';
+  return letters[Math.floor(Math.random() * letters.length)];
 }
 
 export class WordGameService {
   constructor(db) {
-    this.db = db; // raw db handle (db.db)
-    this.games = new Map(); // chatJid -> GameState
+    this.db = db;
+    this.games = new Map();
   }
 
-  get col() {
-    return this.db.collection('word_game_leaderboard');
-  }
+  get col() { return this.db.collection('word_game_leaderboard'); }
 
-  // ── Public API ────────────────────────────────────────────────────────────
+  hasGame(chatJid) { return this.games.has(chatJid); }
+  getGame(chatJid) { return this.games.get(chatJid) ?? null; }
 
-  hasGame(chatJid) {
-    return this.games.has(chatJid);
-  }
-
-  getGame(chatJid) {
-    return this.games.get(chatJid) ?? null;
-  }
-
-  /**
-   * Called by ,wdg command. Returns a message to send.
-   */
   startLobby(chatJid, starterJid, maxPlayers, sendFn) {
-    if (this.games.has(chatJid)) return '⚠️ A game is already running here. Type ,join to join or wait for it to finish.';
+    if (this.games.has(chatJid)) return '⚠️ A game is already running here. Type *,join* to join or wait for it to finish.';
     if (this.games.size > 0) return '⚠️ A game is already running in another chat. Only one game at a time is allowed.';
+
     const max = Math.max(2, Math.min(10, maxPlayers || 5));
     const game = {
-      chatJid,
-      phase: 'lobby',       // lobby | playing | done
-      maxPlayers: max,
-      players: [],          // { jid, lives, score }
-      usedWords: new Set(),
-      round: 0,
-      currentIdx: 0,
-      currentLetter: null,
-      timerMs: BASE_TIMER_MS,
-      minLength: BASE_MIN_LENGTH,
-      turnTimer: null,
-      joinTimer: null,
-      sendFn,
+      chatJid, phase: 'lobby', maxPlayers: max,
+      players: [], usedWords: new Set(),
+      round: 0, currentIdx: 0, currentLetter: null,
+      timerMs: BASE_TIMER_MS, minLength: BASE_MIN_LENGTH,
+      turnTimer: null, warnTimer: null, joinTimer: null, sendFn,
     };
     this.games.set(chatJid, game);
-
-    // Auto-join the starter
     this._addPlayer(game, starterJid);
 
-    // Auto-start after JOIN_WINDOW_MS if not already started
+    // 30s warning before auto-start
+    const warnAt = JOIN_WINDOW_MS - 30_000;
+    if (warnAt > 0) {
+      setTimeout(() => {
+        if (game.phase === 'lobby') sendFn('⏰ *30 seconds left* to join! Type *,join* now.');
+      }, warnAt);
+    }
+
     game.joinTimer = setTimeout(() => {
       if (game.phase !== 'lobby') return;
       if (game.players.length < 2) {
@@ -105,18 +101,15 @@ export class WordGameService {
       `🎮 *Word Game started!*`,
       `👥 Players: 1/${max} — type *,join* to join`,
       `⏳ Game starts in 60s or when full`,
-      `📌 Starter can type *,start* to begin early (needs ≥2 players)`,
+      `📌 Type *,start* to begin early (needs ≥2 players)`,
     ].join('\n');
   }
 
-  /**
-   * Called by ,join command. Returns a message to send.
-   */
   joinGame(chatJid, jid) {
     const game = this.games.get(chatJid);
     if (!game) return '❌ No game lobby open. Type *,wdg* to start one.';
     if (game.phase !== 'lobby') return '❌ Game already in progress.';
-    if (game.players.some((p) => p.jid === jid)) return '⚠️ You already joined.';
+    if (game.players.some((p) => normalizeJid(p.jid) === normalizeJid(jid))) return '⚠️ You already joined.';
     if (game.players.length >= game.maxPlayers) return '❌ Game is full.';
 
     this._addPlayer(game, jid);
@@ -124,40 +117,37 @@ export class WordGameService {
 
     if (count >= game.maxPlayers) {
       clearTimeout(game.joinTimer);
-      setTimeout(() => this._beginGame(game), 1500);
+      this._beginGame(game);
       return `✅ ${mask(jid)} joined! (${count}/${game.maxPlayers}) — Starting now...`;
     }
     return `✅ ${mask(jid)} joined! (${count}/${game.maxPlayers})`;
   }
 
-  /**
-   * Called by ,start command (starter only).
-   */
   forceStart(chatJid, jid) {
     const game = this.games.get(chatJid);
-    if (!game) return '❌ No game lobby open.';
+    if (!game) return null; // no game, silently ignore
     if (game.phase !== 'lobby') return '❌ Game already started.';
-    if (game.players[0]?.jid !== jid) return '❌ Only the game starter can force-start.';
+    if (game.players[0]?.jid !== jid && !game.players.some((p) => normalizeJid(p.jid) === normalizeJid(jid))) {
+      return '❌ Only a joined player can force-start.';
+    }
+    if (game.players[0] && normalizeJid(game.players[0].jid) !== normalizeJid(jid)) {
+      return '❌ Only the game starter can force-start.';
+    }
     if (game.players.length < 2) return '❌ Need at least 2 players to start.';
     clearTimeout(game.joinTimer);
-    setTimeout(() => this._beginGame(game), 500);
-    return '▶️ Starting game...';
+    this._beginGame(game);
+    return null; // _beginGame sends its own message
   }
 
-  /**
-   * Called by ,wdg stop (starter or owner).
-   */
   stopGame(chatJid, jid, isOwner = false) {
     const game = this.games.get(chatJid);
     if (!game) return '❌ No game running.';
-    if (!isOwner && game.players[0]?.jid !== jid) return '❌ Only the game starter or owner can stop the game.';
+    const isStarter = normalizeJid(game.players[0]?.jid) === normalizeJid(jid);
+    if (!isOwner && !isStarter) return '❌ Only the game starter or owner can stop the game.';
     this._cleanup(game, '🛑 Game stopped by host.');
-    return null; // message already sent inside _cleanup
+    return null;
   }
 
-  /**
-   * Handle a plain-text message during a game. Returns true if consumed.
-   */
   async handleMessage(chatJid, senderJid, text) {
     const game = this.games.get(chatJid);
     if (!game || game.phase !== 'playing') return false;
@@ -166,11 +156,11 @@ export class WordGameService {
     if (!current || normalizeJid(current.jid) !== normalizeJid(senderJid)) return false;
 
     const word = text.trim().toLowerCase();
-    if (!/^[a-z]+$/.test(word)) return false; // ignore non-alpha
+    if (!/^[a-z]+$/.test(word)) return false;
 
     clearTimeout(game.turnTimer);
+    clearTimeout(game.warnTimer);
 
-    // Validate
     const fail = await this._validateWord(game, word);
     if (fail) {
       await game.sendFn(fail);
@@ -178,21 +168,15 @@ export class WordGameService {
       return true;
     }
 
-    // Good word
     game.usedWords.add(word);
     current.score += word.length;
-    await game.sendFn(`✅ *${word}* — good! (+${word.length} pts)`);
+    await game.sendFn(`✅ *${word}* — nice! (+${word.length} pts)`);
     this._nextTurn(game);
     return true;
   }
 
-  async getLeaderboard(chatJid) {
-    const rows = await this.col
-      .find({})
-      .sort({ wins: -1, score: -1 })
-      .limit(10)
-      .toArray()
-      .catch(() => []);
+  async getLeaderboard() {
+    const rows = await this.col.find({}).sort({ wins: -1, score: -1 }).limit(10).toArray().catch(() => []);
     if (!rows.length) return '📊 No leaderboard data yet.';
     const lines = rows.map((r, i) => `│ ${i + 1}. ${mask(r._id)} — 🏆 ${r.wins}W / 🎯 ${r.score}pts`);
     return ['╭─「 🏆 *Word Game Leaderboard* 」', ...lines, '╰────────────────────'].join('\n');
@@ -236,8 +220,17 @@ export class WordGameService {
       `Min length: *${game.minLength}* | ⏱️ *${game.timerMs / 1000}s* | ❤️ ${current.lives}`,
     ].join('\n'));
 
+    // Warn when WARN_BEFORE_MS remain (only if timer is long enough)
+    if (game.timerMs > WARN_BEFORE_MS + 5000) {
+      game.warnTimer = setTimeout(() => {
+        if (game.phase !== 'playing') return;
+        game.sendFn(`⚠️ *${mask(current.jid)}* — ${WARN_BEFORE_MS / 1000}s left!`);
+      }, game.timerMs - WARN_BEFORE_MS);
+    }
+
     game.turnTimer = setTimeout(() => {
       if (game.phase !== 'playing') return;
+      clearTimeout(game.warnTimer);
       game.sendFn(`⏰ *${mask(current.jid)}* ran out of time!`);
       this._loseLife(game, current);
     }, game.timerMs);
@@ -263,7 +256,6 @@ export class WordGameService {
       return;
     }
 
-    // Advance to next alive player
     let next = (game.currentIdx + 1) % game.players.length;
     let loops = 0;
     while (game.players[next].eliminated) {
@@ -272,7 +264,6 @@ export class WordGameService {
     }
     game.currentIdx = next;
 
-    // Check if we completed a full round (back to first alive player)
     const firstAliveIdx = game.players.findIndex((p) => !p.eliminated);
     if (next === firstAliveIdx && !afterPenalty) {
       game.round += 1;
@@ -285,7 +276,6 @@ export class WordGameService {
         `🔤 New letter: *${game.currentLetter.toUpperCase()}*`,
       ].join('\n'));
     } else {
-      // Same round, just pick a new letter for next player
       game.currentLetter = randomLetter();
     }
 
@@ -295,6 +285,7 @@ export class WordGameService {
   async _endGame(game, winner) {
     game.phase = 'done';
     clearTimeout(game.turnTimer);
+    clearTimeout(game.warnTimer);
 
     const scores = [...game.players]
       .sort((a, b) => b.score - a.score)
@@ -319,7 +310,6 @@ export class WordGameService {
       ].join('\n'));
     }
 
-    // Record scores for all players
     for (const p of game.players) {
       if (p !== winner) await this._recordScore(p.jid, p.score);
     }
@@ -329,6 +319,7 @@ export class WordGameService {
 
   _cleanup(game, msg) {
     clearTimeout(game.turnTimer);
+    clearTimeout(game.warnTimer);
     clearTimeout(game.joinTimer);
     game.phase = 'done';
     if (msg) game.sendFn(msg);
@@ -337,10 +328,10 @@ export class WordGameService {
 
   async _validateWord(game, word) {
     if (!word.startsWith(game.currentLetter)) {
-      return `❌ Word must start with *${game.currentLetter.toUpperCase()}*. Try again — you lose a life!`;
+      return `❌ Word must start with *${game.currentLetter.toUpperCase()}*. You lose a life!`;
     }
     if (word.length < game.minLength) {
-      return `❌ Word must be at least *${game.minLength}* letters. Try again — you lose a life!`;
+      return `❌ Word must be at least *${game.minLength}* letters long. You lose a life!`;
     }
     if (game.usedWords.has(word)) {
       return `❌ *${word}* was already used! You lose a life!`;
@@ -353,18 +344,10 @@ export class WordGameService {
   }
 
   async _recordWin(jid, score) {
-    await this.col.updateOne(
-      { _id: jid },
-      { $inc: { wins: 1, score, gamesPlayed: 1 } },
-      { upsert: true },
-    ).catch(() => {});
+    await this.col.updateOne({ _id: jid }, { $inc: { wins: 1, score, gamesPlayed: 1 } }, { upsert: true }).catch(() => {});
   }
 
   async _recordScore(jid, score) {
-    await this.col.updateOne(
-      { _id: jid },
-      { $inc: { score, gamesPlayed: 1 }, $setOnInsert: { wins: 0 } },
-      { upsert: true },
-    ).catch(() => {});
+    await this.col.updateOne({ _id: jid }, { $inc: { score, gamesPlayed: 1 }, $setOnInsert: { wins: 0 } }, { upsert: true }).catch(() => {});
   }
 }
