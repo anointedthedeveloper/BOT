@@ -8,10 +8,11 @@ export const hasRole = (role, required) => (ROLE_LEVEL[role] ?? 0) >= (ROLE_LEVE
 const CACHE_TTL_MS = 60_000; // 1 minute
 
 export class PermissionService {
-  constructor({ config, users, settings = null }) {
+  constructor({ config, users, settings = null, sessionManager = null }) {
     this.config = config;
     this.users = users;
     this.settings = settings;
+    this.sessionManager = sessionManager;
     this.ownerIds = new Set(config.owners);
     this._cache = new Map();
   }
@@ -36,8 +37,10 @@ export class PermissionService {
 
     if (isTenantOwner) return { role: 'owner', user: null };
 
-    // Global admin access — blocked if tenant has disabled it
-    const adminUseEnabled = this.settings?.adminUse !== false && (this.settings?.adminUse ?? true);
+    // Global admin access — blocked if globally disabled
+    const adminUseEnabled = this.sessionManager
+      ? await this.sessionManager.getGlobalAdminUse()
+      : (this.settings?.adminUse !== false && (this.settings?.adminUse ?? true));
     if (adminUseEnabled) {
       const isGlobalAdmin = this.isOwner({ candidates, fromMe: false });
       if (isGlobalAdmin) return { role: 'owner', user: null };

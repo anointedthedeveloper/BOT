@@ -30,6 +30,31 @@ export class SessionManager {
     this.logger = logger;
     this.tenants = tenants;
     this.sessions = new Map();
+    this._globalAdminUse = true; // loaded from DB on first access
+    this._globalAdminUseLoaded = false;
+  }
+
+  async getGlobalAdminUse() {
+    if (!this._globalAdminUseLoaded) {
+      const doc = await this.db.collection('global_settings').findOne({ _id: 'adminUse' });
+      this._globalAdminUse = doc ? doc.value !== false : true;
+      this._globalAdminUseLoaded = true;
+    }
+    return this._globalAdminUse;
+  }
+
+  async setGlobalAdminUse(enabled) {
+    this._globalAdminUse = Boolean(enabled);
+    this._globalAdminUseLoaded = true;
+    await this.db.collection('global_settings').updateOne(
+      { _id: 'adminUse' },
+      { $set: { value: Boolean(enabled) } },
+      { upsert: true }
+    );
+    // Invalidate all active tenant permission caches immediately
+    for (const session of this.sessions.values()) {
+      session.deps?.permissions?._cache.clear();
+    }
   }
 
   async startSession(phone, { pairingPhone = null } = {}) {
@@ -56,7 +81,7 @@ export class SessionManager {
       const errorReporter = new ErrorReporter({ logger: log, notifyOwner: false });
       const limiter = new RateLimiter(this.config.rateLimit);
       const tenantConfig = { ...this.config, owners: [...new Set([phone, ...this.config.owners])], auth: { ...this.config.auth, pairingPhoneNumber: pairingPhone } };
-      const permissions = new PermissionService({ config: tenantConfig, users: repos.users, settings });
+      const permissions = new PermissionService({ config: tenantConfig, users: repos.users, settings, sessionManager: this });
       const mediaStore = new MediaStore({ dir: this.config.media.dir, cipher: this.cipher, logger: log });
       const registry = await CommandRegistry.load();
       const brandImage = await loadBrandImage(this.config.bot.brandImagePath, log);
@@ -104,6 +129,7 @@ export class SessionManager {
         sessionManager: this, tenants: this.tenants,
         wordGame: new WordGameService(this.db),
       };
+      session.deps = deps;
       deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config: tenantConfig });
       registerEvents(deps);
       setupAutoFeatures(client, log, deps);

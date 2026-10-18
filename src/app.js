@@ -94,6 +94,7 @@ export async function createApp(config, { logger = createLogger(config), databas
   const tenants = new TenantsRepository(database.db);
   await tenants.ensureIndexes();
   const sessionManager = new SessionManager({ config, db: database.db, cipher, baileys, logger, tenants });
+  await sessionManager.getGlobalAdminUse(); // pre-load from DB
   deps.sessionManager = sessionManager;
   deps.tenants = tenants;
 
