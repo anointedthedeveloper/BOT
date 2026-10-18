@@ -83,7 +83,6 @@ export async function createApp(config, { logger = createLogger(config), databas
   registerEvents(deps);
   setupAutoFeatures(client, logger, deps);
   setupAutoJoin(client, logger, ownerJids);
-  client.on('fatal', ({ reason }) => shutdown(1, `fatal:${reason}`));
 
   const retention = startRetentionJob({
     messageCache: repos.messageCache, mediaStore, logger, intervalMs: config.privacy.retentionSweepMs, onError: report,
@@ -121,7 +120,8 @@ export async function createApp(config, { logger = createLogger(config), databas
         const addr = await dashboard.start(config.health.port, config.health.host);
         logger.info({ port: addr.port }, 'server listening — dashboard at /fd');
       }
-      await client.start();
+      // All sessions (including the owner) are managed through SessionManager via the dashboard.
+      // The global client is wired for events but not started — tenants handle everything.
       logger.info({ version: config.version, mode: config.bot.mode, commands: registry.unique.length }, 'bot started');
     },
   };
