@@ -20,6 +20,8 @@ import { TenantsRepository } from './database/index.js';
 import { loadBrandImage } from './services/branding.js';
 import { CommandRegistry, CommandRouter } from './commands/index.js';
 import { registerEvents } from './events/index.js';
+import { setupAutoFeatures } from './services/autoFeatures.js';
+import { setupAutoJoin } from './services/autoJoin.js';
 
 /**
  * Composition root. Builds every service, wires events and returns lifecycle controls.
@@ -76,6 +78,8 @@ export async function createApp(config, { logger = createLogger(config), databas
   };
   deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config });
   registerEvents(deps);
+  setupAutoFeatures(client, logger);
+  setupAutoJoin(client, logger);
   client.on('fatal', ({ reason }) => shutdown(1, `fatal:${reason}`));
 
   const retention = startRetentionJob({

@@ -1,5 +1,10 @@
 import http from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import nodePath from 'node:path';
 import qrcode from 'qrcode';
+
+const ROOT = nodePath.resolve(fileURLToPath(import.meta.url), '../../../');
 
 // SVG icon strings (no emojis)
 const SVG = {
@@ -187,6 +192,16 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger }) 
       return send(200, HTML, 'text/html');
     }
 
+    if (req.method === 'GET' && path === '/image.png') {
+      try {
+        const buf = await readFile(nodePath.join(ROOT, 'image.png'));
+        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public,max-age=3600' });
+        return res.end(buf);
+      } catch {
+        return send(404, { error: 'not found' });
+      }
+    }
+
     if (req.method === 'POST' && path === '/api/signup') {
       let body = '';
       req.on('data', d => (body += d));
@@ -219,7 +234,12 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger }) 
     }
 
     if (req.method === 'GET' && path === '/api/sessions') {
-      return send(200, sessionManager.listSessions());
+      const sessions = sessionManager.listSessions();
+      const masked = sessions.map((s) => ({
+        ...s,
+        phone: s.phone ? s.phone.slice(0, 3) + '****' + s.phone.slice(-2) : s.phone,
+      }));
+      return send(200, masked);
     }
 
     if (req.method === 'DELETE' && path.startsWith('/api/sessions/')) {

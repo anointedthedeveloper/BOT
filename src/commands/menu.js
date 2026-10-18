@@ -36,6 +36,11 @@ export default {
       `│ ${p}info — Bot info & uptime`,
       `│ ${p}settings — Manage bot settings`,
       `╰────────────────────`,
+      ``,
+      `╭─「 👥 *GROUP TOOLS* 」`,
+      `│ ${p}tagall / ${p}tga [msg] — Tag all members`,
+      `│ ${p}msgcount / ${p}mc [@user|reply] [day|week]`,
+      `╰────────────────────`,
     ];
     await ctx.reply(lines.join('\n'));
   },

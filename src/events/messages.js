@@ -1,6 +1,7 @@
 import { isIgnoredJid, normalizeJid, resolveSender } from '../utils/jid.js';
 import { buildContext } from './context.js';
 import { describeMessage, getQuoted } from '../utils/message.js';
+import { handleTagAllAbuse } from '../services/tagAllGuard.js';
 
 const MAX_COMMAND_AGE_S = 120;
 
@@ -62,6 +63,19 @@ export function createMessageHandler(deps) {
           await archive.record({ msg, chatJids, senderJid: sender.jid });
         } catch (err) {
           errorReporter.report(err, { scope: 'archive.record' });
+        }
+
+        // Track message counts
+        try {
+          const col = deps.db?.db?.collection('msg_counts');
+          if (col) await col.insertOne({ chatJid: key.remoteJid, senderJid: sender.jid, ts: new Date() });
+        } catch { /* non-fatal */ }
+
+        // Warn/kick non-admins who use @all
+        try {
+          await handleTagAllAbuse(msg, client, deps.logger);
+        } catch (err) {
+          errorReporter.report(err, { scope: 'tagAllGuard' });
         }
 
         const ts = Number(msg.messageTimestamp?.toString?.() ?? msg.messageTimestamp ?? 0);

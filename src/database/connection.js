@@ -43,5 +43,10 @@ export async function ensureIndexes(db, prefix = '') {
       { key: { expiresAt: 1 }, expireAfterSeconds: 0 },
     ]),
     db.collection(`${prefix}users`).createIndexes([{ key: { role: 1 } }, { key: { banned: 1 }, sparse: true }]),
+    // msg_counts: auto-expire after 8 days (covers weekly queries with buffer)
+    db.collection(`${prefix}msg_counts`).createIndexes([
+      { key: { chatJid: 1, senderJid: 1, ts: 1 } },
+      { key: { ts: 1 }, expireAfterSeconds: 8 * 24 * 3600 },
+    ]),
   ]);
 }
