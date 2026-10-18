@@ -1,4 +1,5 @@
 import { setTagGuard, isTagGuardEnabled } from '../services/tagAllGuard.js';
+import { normalizeJid } from '../utils/jid.js';
 
 export default {
   name: 'tagguard',
@@ -9,7 +10,6 @@ export default {
   async execute(ctx) {
     if (!ctx.isGroup) return ctx.reply('❌ Group only.');
 
-    // Must be a group admin
     let meta;
     try {
       meta = await ctx.deps.client.rawSock.groupMetadata(ctx.chatJid);
@@ -17,9 +17,13 @@ export default {
       return ctx.reply('❌ Could not fetch group info.');
     }
 
-    const senderJid = ctx.msg.key.participant ?? ctx.msg.key.remoteJid;
-    const member = (meta.participants ?? []).find((p) => p.id === senderJid || p.id.startsWith(senderJid.split('@')[0]));
-    const isAdmin = member?.admin === 'admin' || member?.admin === 'superadmin';
+    const senderJid = normalizeJid(ctx.msg.key.participant ?? ctx.msg.key.remoteJid);
+    const senderNum = senderJid.split('@')[0];
+    const member = (meta.participants ?? []).find((p) => {
+      const pNum = normalizeJid(p.id).split('@')[0];
+      return pNum === senderNum;
+    });
+    const isAdmin = ctx.role === 'owner' || member?.admin === 'admin' || member?.admin === 'superadmin';
     if (!isAdmin) return ctx.reply('❌ Only group admins can change this setting.');
 
     const arg = ctx.args[0]?.toLowerCase();
@@ -34,7 +38,6 @@ export default {
       return ctx.reply('🔕 @all guard *disabled*.');
     }
 
-    // status
     const on = await isTagGuardEnabled(ctx.chatJid, db);
     return ctx.reply(`ℹ️ @all guard is currently *${on ? 'ON' : 'OFF'}* in this group.\nUse \`,tagguard on\` or \`,tagguard off\` to change it.`);
   },

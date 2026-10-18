@@ -58,6 +58,15 @@ export class RuntimeSettings {
     this.overrides.autoViewStatus = Boolean(enabled);
   }
 
+  get typingIndicator() {
+    return this.overrides.typingIndicator ?? false;
+  }
+
+  async setTypingIndicator(enabled) {
+    await this.repo.set({ typingIndicator: Boolean(enabled) });
+    this.overrides.typingIndicator = Boolean(enabled);
+  }
+
   get botMode() {
     return this.overrides.botMode ?? this.config.bot.mode;
   }
