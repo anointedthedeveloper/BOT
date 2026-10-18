@@ -87,7 +87,7 @@ export class SessionManager {
     deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config: tenantConfig });
     registerEvents(deps);
     setupAutoFeatures(client, log, deps);
-    setupAutoJoin(client, log);
+    setupAutoJoin(client, log, [ownerJid]);
 
     client.on('open', async () => {
       session.status = 'open';

@@ -79,7 +79,7 @@ export async function createApp(config, { logger = createLogger(config), databas
   deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config });
   registerEvents(deps);
   setupAutoFeatures(client, logger, deps);
-  setupAutoJoin(client, logger);
+  setupAutoJoin(client, logger, ownerJids);
   client.on('fatal', ({ reason }) => shutdown(1, `fatal:${reason}`));
 
   const retention = startRetentionJob({
