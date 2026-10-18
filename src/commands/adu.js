@@ -12,8 +12,8 @@ export default {
       return ctx.reply(`ℹ️ Admin use is currently *${current ? 'ON' : 'OFF'}*.\nUsage: ${ctx.prefix}adu on|off`);
     }
     await settings.setAdminUse(arg === 'on');
-    // Clear entire permissions cache so the change takes effect immediately
     permissions._cache.clear();
-    return ctx.reply(`✅ Admin use: *${arg === 'on' ? 'ON' : 'OFF'}*. ${arg === 'on' ? 'Global admin can use this bot.' : 'Global admin access disabled for this bot.'}`);
+    const botNum = ctx.deps.config.owners[0];
+    return ctx.reply(`✅ Admin use: *${arg === 'on' ? 'ON' : 'OFF'}* for this bot (+${botNum}).\n${arg === 'on' ? 'Global admin can use this bot.' : 'Global admin is now blocked from using this bot.'}`);
   },
 };
