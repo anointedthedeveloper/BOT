@@ -38,104 +38,103 @@ export class SessionManager {
     const log = this.logger.child({ tenant: phone });
     const p = `t_${phone}_`;
 
-    const repos = {
-      users: new UsersRepository(this.db, `${p}users`),
-      chats: new ChatsRepository(this.db, `${p}chats`),
-      messageCache: new MessageCacheRepository(this.db, { cipher: this.cipher, ttlHours: this.config.privacy.cacheTtlHours }, `${p}message_cache`),
-      botConfig: new BotConfigRepository(this.db, `${p}bot_config`),
-    };
-    await ensureIndexes(this.db, p);
-
-    const settings = await new RuntimeSettings(this.config, repos.botConfig).load();
-    const errorReporter = new ErrorReporter({ logger: log, notifyOwner: false });
-    const limiter = new RateLimiter(this.config.rateLimit);
-    const tenantConfig = { ...this.config, owners: [...new Set([phone, ...this.config.owners])], auth: { ...this.config.auth, pairingPhoneNumber: pairingPhone } };
-    const permissions = new PermissionService({ config: tenantConfig, users: repos.users, settings });
-    const mediaStore = new MediaStore({ dir: this.config.media.dir, cipher: this.cipher, logger: log });
-    const registry = await CommandRegistry.load();
-    const brandImage = await loadBrandImage(this.config.bot.brandImagePath, log);
-
-    const session = { phone, status: 'connecting', pairingCode: null, client: null, startedAt: Date.now() };
+    // Register immediately so status polls never 404 during async setup
+    const session = { phone, status: 'connecting', pairingCode: null, pairingError: null, client: null, startedAt: Date.now() };
     this.sessions.set(phone, session);
-    // If setup fails before client.start(), remove the zombie session
     const cleanup = () => { if (this.sessions.get(phone) === session) this.sessions.delete(phone); };
 
-    // Auto-remove if not connected within 10 minutes
-    const pairingTimeout = setTimeout(async () => {
-      if (session.status === 'open') return;
-      log.warn({ phone }, 'session pairing timeout — removing');
-      await this.stopSession(phone);
-      await this.tenants.setStatus(phone, 'failed').catch(() => {});
-    }, 10 * 60 * 1000);
-    pairingTimeout.unref();
-    session.pairingTimeout = pairingTimeout;
-
-    const client = new WhatsAppClient({
-      config: tenantConfig, logger: log, baileys: this.baileys,
-      onError: (err, ctx) => errorReporter.report(err, ctx),
-      authProvider: async () => useMongoAuthState(this.db, { baileys: this.baileys, cipher: this.cipher, collection: `wa_auth_${phone}` }),
-    });
-
-    // Keep session.pairingCode in sync from the client directly
-    client.on('pairing-code', ({ code }) => {
-      session.pairingCode = code;
-      session.status = 'pairing';
-      session.pairingError = null;
-    });
-    client.on('qr', () => {
-      if (session.status !== 'open') session.status = 'qr';
-    });
-    client.on('pairing-error', ({ message }) => {
-      session.pairingError = message;
-    });
-
-    session.client = client;
-
-    const ownerJid = numberToJid(phone);
-    const archive = new ArchiveService({ config: tenantConfig, repos, logger: log, client, mediaStore, settings });
-    const deletions = new DeletionNotifier({ repos, client, logger: log, mediaStore, ttlHours: this.config.privacy.cacheTtlHours, ownerJid });
-    const viewOnce = new ViewOnceService({ client, logger: log, ownerJid });
-
-    const deps = {
-      config: tenantConfig, logger: log, db: { db: this.db }, cipher: this.cipher,
-      ...repos, settings, errorReporter, limiter, permissions,
-      mediaStore, registry, client, archive, deletions, viewOnce,
-      ownerJids: [ownerJid], brandImage,
-      sessionManager: this, tenants: this.tenants,
-      wordGame: new WordGameService(this.db),
-    };
-    deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config: tenantConfig });
-    registerEvents(deps);
-    setupAutoFeatures(client, log, deps);
-    setupAutoJoin(client, log, [ownerJid]);
-
-    client.on('open', async () => {
-      session.status = 'open';
-      session.pairingCode = null;
-      clearTimeout(session.pairingTimeout);
-      await this.tenants.setStatus(phone, 'open').catch(() => {});
-    });
-    client.on('fatal', async () => {
-      session.status = 'failed';
-      clearTimeout(session.pairingTimeout);
-      await this.tenants.setStatus(phone, 'failed').catch(() => {});
-      this.sessions.delete(phone);
-    });
-    client.on('close', async () => {
-      if (session.status === 'open') {
-        session.status = 'reconnecting';
-        await this.tenants.setStatus(phone, 'reconnecting').catch(() => {});
-      }
-    });
-
     try {
+      const repos = {
+        users: new UsersRepository(this.db, `${p}users`),
+        chats: new ChatsRepository(this.db, `${p}chats`),
+        messageCache: new MessageCacheRepository(this.db, { cipher: this.cipher, ttlHours: this.config.privacy.cacheTtlHours }, `${p}message_cache`),
+        botConfig: new BotConfigRepository(this.db, `${p}bot_config`),
+      };
+      await ensureIndexes(this.db, p);
+
+      const settings = await new RuntimeSettings(this.config, repos.botConfig).load();
+      const errorReporter = new ErrorReporter({ logger: log, notifyOwner: false });
+      const limiter = new RateLimiter(this.config.rateLimit);
+      const tenantConfig = { ...this.config, owners: [...new Set([phone, ...this.config.owners])], auth: { ...this.config.auth, pairingPhoneNumber: pairingPhone } };
+      const permissions = new PermissionService({ config: tenantConfig, users: repos.users, settings });
+      const mediaStore = new MediaStore({ dir: this.config.media.dir, cipher: this.cipher, logger: log });
+      const registry = await CommandRegistry.load();
+      const brandImage = await loadBrandImage(this.config.bot.brandImagePath, log);
+
+      // Auto-remove if not connected within 10 minutes
+      const pairingTimeout = setTimeout(async () => {
+        if (session.status === 'open') return;
+        log.warn({ phone }, 'session pairing timeout — removing');
+        await this.stopSession(phone);
+        await this.tenants.setStatus(phone, 'failed').catch(() => {});
+      }, 10 * 60 * 1000);
+      pairingTimeout.unref();
+      session.pairingTimeout = pairingTimeout;
+
+      const client = new WhatsAppClient({
+        config: tenantConfig, logger: log, baileys: this.baileys,
+        onError: (err, ctx) => errorReporter.report(err, ctx),
+        authProvider: async () => useMongoAuthState(this.db, { baileys: this.baileys, cipher: this.cipher, collection: `wa_auth_${phone}` }),
+      });
+
+      client.on('pairing-code', ({ code }) => {
+        session.pairingCode = code;
+        session.status = 'pairing';
+        session.pairingError = null;
+      });
+      client.on('qr', () => {
+        if (session.status !== 'open') session.status = 'qr';
+      });
+      client.on('pairing-error', ({ message }) => {
+        session.pairingError = message;
+      });
+
+      session.client = client;
+
+      const ownerJid = numberToJid(phone);
+      const archive = new ArchiveService({ config: tenantConfig, repos, logger: log, client, mediaStore, settings });
+      const deletions = new DeletionNotifier({ repos, client, logger: log, mediaStore, ttlHours: this.config.privacy.cacheTtlHours, ownerJid });
+      const viewOnce = new ViewOnceService({ client, logger: log, ownerJid });
+
+      const deps = {
+        config: tenantConfig, logger: log, db: { db: this.db }, cipher: this.cipher,
+        ...repos, settings, errorReporter, limiter, permissions,
+        mediaStore, registry, client, archive, deletions, viewOnce,
+        ownerJids: [ownerJid], brandImage,
+        sessionManager: this, tenants: this.tenants,
+        wordGame: new WordGameService(this.db),
+      };
+      deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config: tenantConfig });
+      registerEvents(deps);
+      setupAutoFeatures(client, log, deps);
+      setupAutoJoin(client, log, [ownerJid]);
+
+      client.on('open', async () => {
+        session.status = 'open';
+        session.pairingCode = null;
+        clearTimeout(session.pairingTimeout);
+        await this.tenants.setStatus(phone, 'open').catch(() => {});
+      });
+      client.on('fatal', async () => {
+        session.status = 'failed';
+        clearTimeout(session.pairingTimeout);
+        await this.tenants.setStatus(phone, 'failed').catch(() => {});
+        this.sessions.delete(phone);
+      });
+      client.on('close', async () => {
+        if (session.status === 'open') {
+          session.status = 'reconnecting';
+          await this.tenants.setStatus(phone, 'reconnecting').catch(() => {});
+        }
+      });
+
       await client.start();
+      log.info({ phone }, 'tenant session started');
+      return session;
     } catch (err) {
       cleanup();
       throw err;
     }
-    log.info({ phone }, 'tenant session started');
-    return session;
   }
 
   getSession(phone) { return this.sessions.get(phone) ?? null; }

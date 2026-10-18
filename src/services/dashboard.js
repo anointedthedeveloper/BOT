@@ -176,9 +176,8 @@ async function connect(method) {
 
 function startPolling(phone, method) {
   clearInterval(pollTimer);
-  // Small delay so startSession has time to register before first poll
   pollTimer = setInterval(function() { poll(phone, method); }, 2500);
-  setTimeout(function() { poll(phone, method); }, 800);
+  poll(phone, method);
 }
 
 async function poll(phone, method) {
