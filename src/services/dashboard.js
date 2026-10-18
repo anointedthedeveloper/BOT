@@ -207,6 +207,15 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger }) 
       }
     }
 
+    if (req.method === 'GET' && path === '/debug-fs') {
+      const { readdir } = await import('node:fs/promises');
+      const dirs = {};
+      for (const d of ['/app', ROOT, nodePath.join(ROOT, '..'), '/opt/render/project/src']) {
+        try { dirs[d] = await readdir(d); } catch (e) { dirs[d] = e.message; }
+      }
+      return send(200, dirs);
+    }
+
     if (req.method === 'POST' && path === '/api/signup') {
       let body = '';
       req.on('data', d => (body += d));
