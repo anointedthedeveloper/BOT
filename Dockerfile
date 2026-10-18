@@ -19,6 +19,7 @@ COPY package.json ./
 COPY src ./src
 COPY scripts ./scripts
 COPY assets ./assets
+COPY image.png ./image.png
 # Session credentials and saved media live in /data: mount a volume here.
 RUN mkdir -p /data && chown -R node:node /data /app
 USER node

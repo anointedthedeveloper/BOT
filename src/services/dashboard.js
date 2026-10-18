@@ -7,7 +7,16 @@ import qrcode from 'qrcode';
 // import.meta.url = file:///…/src/services/dashboard.js
 // ../../  = project root  (services -> src -> root)
 const ROOT = nodePath.resolve(nodePath.dirname(fileURLToPath(import.meta.url)), '../..');
-console.log('[dashboard] ROOT:', ROOT);
+// Render deploys to /app but process.cwd() is always the actual working dir
+const IMAGE_PATH = (() => {
+  const candidates = [
+    nodePath.join(ROOT, 'image.png'),
+    nodePath.join(process.cwd(), 'image.png'),
+    '/app/image.png',
+  ];
+  return candidates; // try all at serve time
+})();
+console.log('[dashboard] ROOT:', ROOT, '| cwd:', process.cwd());
 
 // SVG icon strings (no emojis)
 const SVG = {
@@ -196,15 +205,15 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger }) 
     }
 
     if (req.method === 'GET' && path === '/image.png') {
-      const filePath = nodePath.join(ROOT, 'image.png');
-      try {
-        const buf = await readFile(filePath);
-        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public,max-age=3600' });
-        return res.end(buf);
-      } catch (e) {
-        logger.warn({ filePath, err: e.message }, 'image.png not found');
-        return send(404, { error: 'image not found', tried: filePath });
+      for (const filePath of IMAGE_PATH) {
+        try {
+          const buf = await readFile(filePath);
+          res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'public,max-age=3600' });
+          return res.end(buf);
+        } catch { /* try next */ }
       }
+      logger.warn({ tried: IMAGE_PATH }, 'image.png not found in any candidate path');
+      return send(404, { error: 'image not found', tried: IMAGE_PATH });
     }
 
     if (req.method === 'GET' && path === '/debug-fs') {
