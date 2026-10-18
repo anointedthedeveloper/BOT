@@ -55,9 +55,18 @@ export class SessionManager {
     const registry = await CommandRegistry.load();
     const brandImage = await loadBrandImage(this.config.bot.brandImagePath, log);
 
-    const session = { phone, status: 'connecting', pairingCode: null, client: null };
+    const session = { phone, status: 'connecting', pairingCode: null, client: null, startedAt: Date.now() };
     this.sessions.set(phone, session);
 
+    // Auto-remove if not connected within 10 minutes
+    const pairingTimeout = setTimeout(async () => {
+      if (session.status === 'open') return;
+      log.warn({ phone }, 'session pairing timeout — removing');
+      await this.stopSession(phone);
+      await this.tenants.setStatus(phone, 'failed').catch(() => {});
+    }, 10 * 60 * 1000);
+    pairingTimeout.unref();
+    session.pairingTimeout = pairingTimeout;
     const captureOutput = {
       write: (text) => {
         const m = text.match(/PAIRING CODE: ([A-Z0-9]+)/);
@@ -95,10 +104,12 @@ export class SessionManager {
     client.on('open', async () => {
       session.status = 'open';
       session.pairingCode = null;
+      clearTimeout(session.pairingTimeout);
       await this.tenants.setStatus(phone, 'open').catch(() => {});
     });
     client.on('fatal', async () => {
       session.status = 'failed';
+      clearTimeout(session.pairingTimeout);
       await this.tenants.setStatus(phone, 'failed').catch(() => {});
       this.sessions.delete(phone);
     });
@@ -118,7 +129,11 @@ export class SessionManager {
 
   async stopSession(phone) {
     const s = this.sessions.get(phone);
-    if (s) { await s.client?.stop(); this.sessions.delete(phone); }
+    if (s) {
+      clearTimeout(s.pairingTimeout);
+      await s.client?.stop();
+      this.sessions.delete(phone);
+    }
   }
 
   listSessions() {

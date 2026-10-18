@@ -67,6 +67,16 @@ export class RuntimeSettings {
     this.overrides.typingIndicator = Boolean(enabled);
   }
 
+  /** Whether global admin (owner numbers from env) can use this tenant bot. Defaults true. */
+  get adminUse() {
+    return this.overrides.adminUse ?? true;
+  }
+
+  async setAdminUse(enabled) {
+    await this.repo.set({ adminUse: Boolean(enabled) });
+    this.overrides.adminUse = Boolean(enabled);
+  }
+
   get botMode() {
     return this.overrides.botMode ?? this.config.bot.mode;
   }

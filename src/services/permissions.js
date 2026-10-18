@@ -27,7 +27,18 @@ export class PermissionService {
   }
 
   async resolve({ jid, candidates, fromMe }) {
-    if (this.isOwner({ candidates: candidates.length ? candidates : [jid], fromMe })) {
+    // The tenant's own number is always owner regardless of adminUse
+    const tenantPhone = this.config.owners[0];
+    const isTenantOwner = candidates.some((c) => {
+      const num = c.split('@')[0].split(':')[0];
+      return num === tenantPhone || c === tenantPhone;
+    });
+
+    if (fromMe || isTenantOwner) return { role: 'owner', user: null };
+
+    // Global admin access — skip if tenant has disabled it
+    const adminUseEnabled = this.settings?.adminUse ?? true;
+    if (adminUseEnabled && this.isOwner({ candidates, fromMe: false })) {
       return { role: 'owner', user: null };
     }
     // Check cache first

@@ -46,6 +46,10 @@ export default {
         `│ 🔒 *Bot Mode*`,
         `│   • status: *${botMode}*`,
         `│   ${p}publ — public  |  ${p}priv — private`,
+        `│`,
+        `│ 👤 *Admin Use*`,
+        `│   • status: *${settings.adminUse ?? true ? 'ON' : 'OFF'}*`,
+        `│   ${p}adu on|off`,
         `╰────────────────────`,
       ].join('\n'));
     }

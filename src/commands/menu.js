@@ -62,6 +62,7 @@ export default {
         `│ ${p}publ — Make bot public`,
         `│ ${p}priv — Make bot private`,
         `│ ${p}relink [phone] — Relink sessions`,
+        `│ ${p}adu on|off — Toggle admin access to this bot`,
         `│ 🔒 Mode: *${mode}*`,
         `╰────────────────────`,
       );

@@ -69,9 +69,11 @@ export function createMessageHandler(deps) {
         const col = deps.db?.db?.collection('msg_counts');
         if (col) col.insertOne({ chatJid: key.remoteJid, senderJid: sender.jid, ts: new Date() }).catch(() => {});
 
-        // Warn/kick non-admins who use @all
+        // Warn/kick non-admins who use @all — skip bot's own messages
         try {
-          await handleTagAllAbuse(msg, client, deps.logger, deps.db);
+          if (!client.isOwnOutbound(key.id) && sender.jid !== normalizeJid(client.selfJid)) {
+            await handleTagAllAbuse(msg, client, deps.logger, deps.db);
+          }
         } catch (err) {
           errorReporter.report(err, { scope: 'tagAllGuard' });
         }
