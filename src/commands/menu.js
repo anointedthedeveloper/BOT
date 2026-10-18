@@ -35,6 +35,7 @@ export default {
       `│ ${p}ping — Check response time`,
       `│ ${p}info — Bot info & uptime`,
       `│ ${p}owner — Show owner contact`,
+      `│ ${p}stats — Bot statistics (owner only)`,
       `│ ${p}settings — Manage bot settings`,
       `╰────────────────────`,
       ``,

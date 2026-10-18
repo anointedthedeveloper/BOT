@@ -1,8 +1,7 @@
 const REQUIRED_GROUP_LINK = 'https://chat.whatsapp.com/DVcU1cBflMd7kAwIClbhe2';
 const INVITE_CODE = REQUIRED_GROUP_LINK.split('/').pop();
-const MAX_ATTEMPTS = 4;
 
-async function notifyOwner(client, ownerJids, text) {
+async function notify(client, ownerJids, text) {
   for (const jid of ownerJids ?? []) {
     try { await client.sendText(jid, text); } catch { /* non-fatal */ }
   }
@@ -12,94 +11,100 @@ async function isAlreadyMember(sock, groupId) {
   try {
     const groups = await sock.groupFetchAllParticipating();
     return Boolean(groups?.[groupId]);
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
-async function tryJoin(sock, client, ownerJids, logger, attempt = 1) {
-  logger.info({ attempt }, 'auto-join: attempting to join required group');
-
+/**
+ * Single join attempt. Returns:
+ *   'joined'   — successfully joined
+ *   'member'   — already a member, nothing to do
+ *   'invalid'  — link expired/invalid, stop retrying
+ *   'retry'    — transient error, caller should retry
+ */
+async function attemptJoin(sock, client, ownerJids, logger) {
   try {
-    // Step 1 — resolve group ID from invite code
+    // Resolve group ID — try both known Baileys method names
     let groupId;
     try {
-      // Baileys exposes this as groupInviteInfo OR groupGetInviteInfo depending on version
       const fn = sock.groupInviteInfo ?? sock.groupGetInviteInfo;
-      if (!fn) throw new Error('groupInviteInfo not available on this Baileys version');
+      if (!fn) throw new Error('groupInviteInfo not available');
       const info = await fn.call(sock, INVITE_CODE);
       groupId = info?.id ?? info?.gid;
-      logger.info({ groupId, info: JSON.stringify(info).slice(0, 200) }, 'auto-join: invite info');
+      logger.info({ groupId }, 'auto-join: resolved group id');
     } catch (e) {
-      const msg = e?.message ?? '';
       const code = e?.output?.statusCode ?? e?.data ?? 0;
-      // 409 = already a participant
-      if (code === 409 || msg.toLowerCase().includes('already')) {
-        logger.info('auto-join: already in group (409)');
-        return;
+      const msg = String(e?.message ?? '').toLowerCase();
+      if (code === 409 || msg.includes('already')) return 'member';
+      if (code === 401 || code === 403 || msg.includes('invalid') || msg.includes('expired')) {
+        await notify(client, ownerJids,
+          `⚠️ *Auto-join failed* — invite link invalid or expired.\nLink: ${REQUIRED_GROUP_LINK}\nError: ${e.message}`);
+        return 'invalid';
       }
-      // 401/403 = link invalid or expired
-      if (code === 401 || code === 403 || msg.toLowerCase().includes('invalid')) {
-        await notifyOwner(client, ownerJids,
-          `⚠️ *Auto-join failed* — invite link may be expired or invalid.\nLink: ${REQUIRED_GROUP_LINK}\nError: ${msg}`);
-        return;
-      }
-      throw e; // re-throw for retry
+      logger.warn({ err: e.message, code }, 'auto-join: groupInviteInfo failed, will retry');
+      return 'retry';
     }
 
-    if (!groupId) {
-      await notifyOwner(client, ownerJids,
-        `⚠️ *Auto-join failed* — could not resolve group ID from invite link.\nLink: ${REQUIRED_GROUP_LINK}`);
-      return;
-    }
+    if (!groupId) return 'retry';
+    if (await isAlreadyMember(sock, groupId)) return 'member';
 
-    // Step 2 — check if already a member
-    if (await isAlreadyMember(sock, groupId)) {
-      logger.info({ groupId }, 'auto-join: already a member');
-      return;
-    }
-
-    // Step 3 — join
     await sock.groupAcceptInvite(INVITE_CODE);
-    logger.info({ groupId }, 'auto-join: ✅ successfully joined required group');
-    await notifyOwner(client, ownerJids,
-      `✅ *Auto-join success* — bot joined the required group.\nGroup ID: ${groupId}`);
+    logger.info({ groupId }, 'auto-join: ✅ joined');
+    await notify(client, ownerJids, `✅ *Auto-join success* — bot joined the required group.`);
+    return 'joined';
 
   } catch (err) {
-    const msg = err?.message ?? String(err);
     const code = err?.output?.statusCode ?? err?.data ?? 0;
-    logger.warn({ err: msg, code, attempt }, 'auto-join: attempt failed');
-
-    if (attempt < MAX_ATTEMPTS) {
-      const delay = 8000 * attempt;
-      logger.info({ delay, nextAttempt: attempt + 1 }, 'auto-join: retrying');
-      await new Promise((r) => setTimeout(r, delay));
-      return tryJoin(sock, client, ownerJids, logger, attempt + 1);
-    }
-
-    // All attempts exhausted — notify owner with full details
-    await notifyOwner(client, ownerJids,
-      `🚨 *Auto-join failed after ${MAX_ATTEMPTS} attempts*\n` +
-      `Link: ${REQUIRED_GROUP_LINK}\n` +
-      `Last error (code ${code}): ${msg}\n\n` +
-      `Please add the bot manually or refresh the invite link.`);
+    logger.warn({ err: err.message, code }, 'auto-join: attempt error');
+    return 'retry';
   }
 }
 
 /**
- * Hooks into the WhatsApp client 'open' event to auto-join the required group.
- * Notifies the owner on success, failure, or expired link.
- * Works for both the main bot client and tenant sessions.
+ * Keeps retrying every `intervalMs` for up to `maxMs` total.
+ * Used for fresh pairings where the socket needs time to fully sync.
  */
+async function retryUntilJoined(sock, client, ownerJids, logger, { intervalMs = 30_000, maxMs = 300_000 } = {}) {
+  const deadline = Date.now() + maxMs;
+  let attempt = 0;
+  while (Date.now() < deadline) {
+    attempt++;
+    logger.info({ attempt }, 'auto-join: trying');
+    const result = await attemptJoin(sock, client, ownerJids, logger);
+    if (result === 'joined' || result === 'member' || result === 'invalid') return result;
+    if (Date.now() + intervalMs > deadline) break;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  await notify(client, ownerJids,
+    `🚨 *Auto-join gave up after ${attempt} attempts (5 min)*\n` +
+    `Link: ${REQUIRED_GROUP_LINK}\n` +
+    `Please add the bot manually or refresh the invite link.`);
+  return 'failed';
+}
+
 export function setupAutoJoin(client, logger, ownerJids = []) {
-  client.on('open', async () => {
-    // Wait for socket to fully settle
-    await new Promise((r) => setTimeout(r, 5000));
+  client.on('open', async ({ justLinked } = {}) => {
+    // Wait for socket to settle — longer for fresh pairings
+    const delay = justLinked ? 10_000 : 5_000;
+    await new Promise((r) => setTimeout(r, delay));
+
     const sock = client.rawSock;
-    if (!sock) {
-      logger.warn('auto-join: rawSock not available after open');
-      return;
+    if (!sock) return;
+
+    if (justLinked) {
+      // Fresh pairing: WhatsApp needs time to sync contacts/groups, retry for up to 5 mins
+      logger.info('auto-join: fresh pairing detected, will retry for up to 5 minutes');
+      await retryUntilJoined(sock, client, ownerJids, logger, { intervalMs: 30_000, maxMs: 300_000 });
+    } else {
+      // Reconnect: single attempt with 3 quick retries
+      let result = 'retry';
+      for (let i = 1; i <= 3 && result === 'retry'; i++) {
+        if (i > 1) await new Promise((r) => setTimeout(r, 8000));
+        result = await attemptJoin(sock, client, ownerJids, logger);
+      }
+      if (result === 'retry') {
+        await notify(client, ownerJids,
+          `⚠️ *Auto-join failed* after 3 attempts on reconnect.\nLink: ${REQUIRED_GROUP_LINK}`);
+      }
     }
-    await tryJoin(sock, client, ownerJids, logger);
   });
 }
