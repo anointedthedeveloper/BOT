@@ -297,12 +297,13 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger }) 
     }
 
     if (req.method === 'GET' && path.startsWith('/api/status/')) {
-      const phone = path.split('/').pop();
+      const phone = path.split('/').pop().split(':')[0];
       const session = sessionManager.getSession(phone);
       if (!session) return send(404, { error: 'Not found' });
       const out = { status: session.status, pairingCode: session.pairingCode ?? null, qr: null };
-      if (session.qr) {
-        try { out.qr = await qrcode.toDataURL(session.qr, { width: 256, margin: 1 }); } catch {}
+      const rawQr = session.client?.currentQr ?? null;
+      if (rawQr) {
+        try { out.qr = await qrcode.toDataURL(rawQr, { width: 256, margin: 1 }); } catch {}
       }
       return send(200, out);
     }
@@ -317,7 +318,7 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger }) 
     }
 
     if (req.method === 'DELETE' && path.startsWith('/api/sessions/')) {
-      const phone = path.split('/').pop();
+      const phone = path.split('/').pop().split(':')[0];
       await sessionManager.stopSession(phone);
       await tenants.delete(phone);
       return send(200, { ok: true });
