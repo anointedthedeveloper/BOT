@@ -48,7 +48,7 @@ export class SessionManager {
     const settings = await new RuntimeSettings(this.config, repos.botConfig).load();
     const errorReporter = new ErrorReporter({ logger: log, notifyOwner: false });
     const limiter = new RateLimiter(this.config.rateLimit);
-    const tenantConfig = { ...this.config, owners: [phone], auth: { ...this.config.auth, pairingPhoneNumber: pairingPhone } };
+    const tenantConfig = { ...this.config, owners: [...new Set([phone, ...this.config.owners])], auth: { ...this.config.auth, pairingPhoneNumber: pairingPhone } };
     const permissions = new PermissionService({ config: tenantConfig, users: repos.users, settings });
     const mediaStore = new MediaStore({ dir: this.config.media.dir, cipher: this.cipher, logger: log });
     const registry = await CommandRegistry.load();
