@@ -38,7 +38,7 @@ export async function createApp(config, { logger = createLogger(config), databas
   const errorReporter = new ErrorReporter({ logger, notifyOwner: config.errors.notifyOwner });
   const report = (err, ctx) => errorReporter.report(err, ctx);
   const limiter = new RateLimiter(config.rateLimit);
-  const permissions = new PermissionService({ config, users: repos.users });
+  const permissions = new PermissionService({ config, users: repos.users, settings });
   const mediaStore = new MediaStore({ dir: config.media.dir, cipher, logger });
   const registry = await CommandRegistry.load();
   const brandImage = await loadBrandImage(config.bot.brandImagePath, logger);
@@ -75,6 +75,7 @@ export async function createApp(config, { logger = createLogger(config), databas
   const deps = {
     config, logger, db: database, cipher, ...repos, settings, errorReporter, limiter, permissions,
     mediaStore, registry, client, archive, deletions, viewOnce, ownerJids, brandImage,
+    sessionManager: null, tenants: null, // set below after construction
   };
   deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config });
   registerEvents(deps);
@@ -92,6 +93,8 @@ export async function createApp(config, { logger = createLogger(config), databas
   const tenants = new TenantsRepository(database.db);
   await tenants.ensureIndexes();
   const sessionManager = new SessionManager({ config, db: database.db, cipher, baileys, logger, tenants });
+  deps.sessionManager = sessionManager;
+  deps.tenants = tenants;
 
   // resume any previously connected tenants
   for (const t of await tenants.list()) {

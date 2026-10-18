@@ -8,9 +8,10 @@ export const hasRole = (role, required) => (ROLE_LEVEL[role] ?? 0) >= (ROLE_LEVE
 const CACHE_TTL_MS = 60_000; // 1 minute
 
 export class PermissionService {
-  constructor({ config, users }) {
+  constructor({ config, users, settings = null }) {
     this.config = config;
     this.users = users;
+    this.settings = settings;
     this.ownerIds = new Set(config.owners);
     this._cache = new Map();
   }
@@ -34,10 +35,11 @@ export class PermissionService {
     if (cached && cached.expiresAt > Date.now()) return { role: cached.role, user: cached.user };
 
     const user = await this.users.get(jid);
+    const mode = this.settings?.botMode ?? this.config.bot.mode;
     let role;
     if (user?.banned) role = 'banned';
     else if (user?.role === 'admin') role = 'admin';
-    else if (this.config.bot.mode === 'public' || user?.allowed) role = 'user';
+    else if (mode === 'public' || user?.allowed) role = 'user';
     else role = 'none';
 
     this._cache.set(jid, { role, user, expiresAt: Date.now() + CACHE_TTL_MS });

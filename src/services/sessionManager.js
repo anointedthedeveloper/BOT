@@ -49,7 +49,7 @@ export class SessionManager {
     const errorReporter = new ErrorReporter({ logger: log, notifyOwner: false });
     const limiter = new RateLimiter(this.config.rateLimit);
     const tenantConfig = { ...this.config, owners: [phone], auth: { ...this.config.auth, pairingPhoneNumber: pairingPhone } };
-    const permissions = new PermissionService({ config: tenantConfig, users: repos.users });
+    const permissions = new PermissionService({ config: tenantConfig, users: repos.users, settings });
     const mediaStore = new MediaStore({ dir: this.config.media.dir, cipher: this.cipher, logger: log });
     const registry = await CommandRegistry.load();
     const brandImage = await loadBrandImage(this.config.bot.brandImagePath, log);
@@ -83,6 +83,7 @@ export class SessionManager {
       ...repos, settings, errorReporter, limiter, permissions,
       mediaStore, registry, client, archive, deletions, viewOnce,
       ownerJids: [ownerJid], brandImage,
+      sessionManager: this, tenants: this.tenants,
     };
     deps.router = new CommandRouter({ registry, permissions, users: repos.users, limiter, errorReporter, config: tenantConfig });
     registerEvents(deps);

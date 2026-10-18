@@ -4,8 +4,9 @@ export default {
   usage: 'stats',
   role: 'owner',
   async execute(ctx) {
-    const { db, client } = ctx.deps;
+    const { db, config } = ctx.deps;
     const database = db.db;
+    const ownerNumbers = config.owners.map((o) => o.includes('@') ? o : `${o}@s.whatsapp.net`);
 
     const [
       totalUsers,
@@ -15,7 +16,7 @@ export default {
       totalWarns,
       tenants,
     ] = await Promise.all([
-      database.collection('users').estimatedDocumentCount().catch(() => 0),
+      database.collection('users').countDocuments({ _id: { $nin: ownerNumbers } }).catch(() => 0),
       database.collection('msg_counts').countDocuments({ ts: { $gte: new Date(Date.now() - 86_400_000) } }).catch(() => 0),
       database.collection('msg_counts').countDocuments({ ts: { $gte: new Date(Date.now() - 7 * 86_400_000) } }).catch(() => 0),
       database.collection('group_settings').estimatedDocumentCount().catch(() => 0),

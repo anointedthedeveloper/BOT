@@ -9,6 +9,7 @@ export default {
     const uptime = process.uptime();
     const h = Math.floor(uptime / 3600);
     const m = Math.floor((uptime % 3600) / 60);
+    const isOwner = ctx.role === 'owner';
 
     const lines = [
       `╭━━━━━━━━━━━━━━━━━━━━━╮`,
@@ -35,8 +36,6 @@ export default {
       `│ ${p}ping — Check response time`,
       `│ ${p}info — Bot info & uptime`,
       `│ ${p}owner — Show owner contact`,
-      `│ ${p}stats — Bot statistics (owner only)`,
-      `│ ${p}settings — Manage bot settings`,
       `╰────────────────────`,
       ``,
       `╭─「 👥 *GROUP TOOLS* 」`,
@@ -45,6 +44,22 @@ export default {
       `│ ${p}msgcount / ${p}mc [@user|reply] [day|week]`,
       `╰────────────────────`,
     ];
+
+    if (isOwner) {
+      const mode = settings.botMode ?? 'public';
+      lines.push(
+        ``,
+        `╭─「 👑 *OWNER COMMANDS* 」`,
+        `│ ${p}stats — Bot statistics`,
+        `│ ${p}settings — Manage bot settings`,
+        `│ ${p}publ — Make bot public`,
+        `│ ${p}priv — Make bot private`,
+        `│ ${p}relink [phone] — Relink sessions`,
+        `│ 🔒 Mode: *${mode}*`,
+        `╰────────────────────`,
+      );
+    }
+
     await ctx.reply(lines.join('\n'));
   },
 };

@@ -17,8 +17,8 @@ export default {
 
     const participants = meta.participants ?? [];
     const mentions = participants.map((p) => p.id);
-    const tags = participants.map((p) => `@${p.id.split('@')[0]}`).join(' ');
-    const text = ctx.argText ? `${ctx.argText}\n\n${tags}` : tags;
+    // Use zero-width space so mentions are silent (no visible @number text)
+    const text = ctx.argText || '\u200b';
 
     await client.rawSock.sendMessage(ctx.chatJid, { text, mentions });
   },
