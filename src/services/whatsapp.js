@@ -101,6 +101,8 @@ export class WhatsAppClient {
     if (this.stopping) return;
     this.status = 'connecting';
     this.pairingRequested = false;
+    this.lastQr = null;
+    this.lastPairingCode = null;
     this.auth = await this.authProvider();
     const { Browsers } = this.baileys;
     const makeWASocket = this.baileys.default ?? this.baileys.makeWASocket;
@@ -141,8 +143,8 @@ export class WhatsAppClient {
     const { connection, lastDisconnect, qr, isNewLogin } = update;
 
     if (qr) {
-      this.status = 'qr';
       this.lastQr = qr;
+      await this.#emit('qr', { qr });
       await this.#handleQr(qr);
     }
     // WhatsApp signals a brand-new pairing (vs. a reconnect of an existing session) right after
@@ -199,6 +201,7 @@ export class WhatsAppClient {
     }
 
     // No phone set — fall back to QR in logs
+    this.status = 'qr';
     const art = await qrcode.toString(qr, { type: 'utf8', small: true, errorCorrectionLevel: 'L', scale: 1 });
     this.output.write(`\n${'─'.repeat(60)}\n  SCAN QR CODE: WhatsApp > Linked Devices > Link a Device\n${'─'.repeat(60)}\n${art}${'─'.repeat(60)}\n`);
     this.logger.info('QR code printed above — scan it with WhatsApp > Linked devices');
@@ -285,7 +288,8 @@ export class WhatsAppClient {
   }
 
   get currentQr() {
-    return this.status === 'open' ? null : (this.lastQr ?? null);
+    if (this.status === 'open' || this.config.auth.pairingPhoneNumber) return null;
+    return this.lastQr ?? null;
   }
 
   get currentPairingCode() {

@@ -79,6 +79,9 @@ export class SessionManager {
       session.pairingCode = code;
       session.status = 'pairing';
     });
+    client.on('qr', () => {
+      if (session.status !== 'open') session.status = 'qr';
+    });
 
     session.client = client;
 
