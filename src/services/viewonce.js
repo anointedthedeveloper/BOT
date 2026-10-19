@@ -26,6 +26,13 @@ export class ViewOnceService {
   async handle(msg) {
     if (!this.ownerJid || msg.key.fromMe) return;
 
+    // If the bot IS the owner (same number), auto-forward via this service would send to
+    // self-chat (Saved Messages) and the echo could trigger a re-process loop.
+    // In this case we skip the auto-forward — the owner can use ,vv manually instead.
+    const selfNum = this.client.selfJid ? normalizeJid(this.client.selfJid).split('@')[0] : null;
+    const ownerNum = this.ownerJid.split('@')[0];
+    if (selfNum && selfNum === ownerNum) return;
+
     const info = describeMessage(msg.message);
     if (!info.viewOnce || !info.hasMedia) return;
 
@@ -52,7 +59,28 @@ export class ViewOnceService {
     // Prefer phone-number JID over LID so the caption shows a real number.
     const senderJid = senderResolved.jid || normalizeJid(msg.key.participant ?? msg.key.remoteJid);
     const senderNum = senderJid.split('@')[0];
-    const from = msg.pushName ? `${msg.pushName} (+${senderNum})` : `+${senderNum}`;
+    const isLid = senderJid.endsWith('@lid');
+
+    this.logger.info({
+      remoteJid: msg.key.remoteJid,
+      remoteJidAlt: msg.key.remoteJidAlt ?? '(none)',
+      participant: msg.key.participant ?? '(none)',
+      participantAlt: msg.key.participantAlt ?? '(none)',
+      resolvedJid: senderJid,
+      isLid,
+      pushName: msg.pushName ?? '(none)',
+    }, 'view-once: sender resolution');
+
+    // If we still ended up with a LID and pushName is available, use pushName only
+    // to avoid showing a meaningless internal ID in the caption.
+    let from;
+    if (isLid && msg.pushName) {
+      from = msg.pushName;
+    } else if (isLid) {
+      from = `unknown (LID: ${senderNum})`;
+    } else {
+      from = msg.pushName ? `${msg.pushName} (+${senderNum})` : `+${senderNum}`;
+    }
     const chatJid = normalizeJid(msg.key.remoteJid);
 
     try {

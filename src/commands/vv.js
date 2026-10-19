@@ -46,7 +46,14 @@ export default {
     };
     const senderResolved = resolveSender(fakeKey, { selfJid: client.selfJid });
     const fromJid = senderResolved.jid || normalizeJid(quoted.participant ?? ctx.chatJid);
-    const from = fromJid.split('@')[0];
+    const isLid = fromJid.endsWith('@lid');
+    // If still a LID, avoid showing the meaningless internal ID — use pushName or a fallback
+    let from;
+    if (isLid) {
+      from = ctx.msg?.pushName ?? `unknown`;
+    } else {
+      from = fromJid.split('@')[0];
+    }
 
     await client.sendMedia(ownerJid, {
       kind,

@@ -56,7 +56,9 @@ async function diagnoseVv(ctx, lines) {
     const selfNum2 = normalizeJid(selfJid).split('@')[0];
     const ownerNum = ownerJid.split('@')[0];
     if (selfNum2 === ownerNum) {
-      lines.push(`⚠️  *Self-send loop risk:* Bot number and owner number are the same (${ownerNum}). View-once forwards may echo back.`);
+      lines.push(`⚠️  *Self-send loop:* Bot number and owner number are the same (${ownerNum}).`);
+      lines.push(`   Auto-forward in ViewOnceService is *disabled* for this reason.`);
+      lines.push(`   Use *,vv* manually by replying to a view-once — that still works fine.`);
     } else {
       lines.push(`✅  Bot ≠ owner — no self-send loop risk`);
     }
@@ -91,9 +93,12 @@ async function diagnoseVv(ctx, lines) {
     const isPn = resolved.jid ? isPnJid(resolved.jid) : false;
 
     if (isLid) {
-      lines.push(`⚠️  *Sender is a LID JID* — caption would show an internal ID, not a phone number.`);
-      lines.push(`   Fix: The patch in viewonce.js/vv.js now uses resolveSender which checks *Alt fields.`);
-      lines.push(`   If this message shows LID after the patch, the *Alt fields are also LID — WhatsApp hasn't resolved the phone yet.`);
+      lines.push(`⚠️  *Sender is a LID JID* — raw value: ${resolved.jid}`);
+      lines.push(`   Baileys did not supply a phone-number Alt JID for this message.`);
+      lines.push(`   Caption will fall back to pushName (if available) or "unknown".`);
+      // pushName lives on the outer msg object, accessible via ctx.msg
+      const pn = ctx.msg?.pushName ?? null;
+      lines.push(`   pushName on this message: ${pn ? `"${pn}"` : '(not available — caption will say "unknown")'}`);
     } else if (isPn) {
       lines.push(`✅  Sender is a phone-number JID — caption will show the real number (+${resolved.jid.split('@')[0]})`);
     } else {
