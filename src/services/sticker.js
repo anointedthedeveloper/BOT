@@ -90,10 +90,31 @@ export async function addStickerMetadata(webp, { packName = '', author = '', emo
  */
 export async function makeSticker(buffer, kind, { ffmpegPath } = {}) {
   let webp;
-  if (kind === 'sticker') webp = await stickerFromImage(buffer); // re-pad/resize an existing (static) sticker
-  else if (STATIC_KINDS.has(kind)) webp = await stickerFromImage(buffer);
-  else if (ANIMATED_KINDS.has(kind)) webp = await stickerFromVideo(buffer, { ffmpegPath });
-  else throw new UserError('Only images, GIFs/videos and existing stickers can be turned into a sticker.');
+  if (kind === 'sticker') {
+    // Existing sticker — could be static or animated WebP.
+    // Try sharp first (handles static WebP and images); if it fails (e.g. animated WebP that
+    // sharp's build can't decode, or a premium sticker with unsupported encoding), fall back to
+    // ffmpeg which handles all WebP variants including animated/premium ones.
+    try {
+      webp = await stickerFromImage(buffer);
+    } catch {
+      // sharp couldn't handle it — treat as animated/video via ffmpeg
+      try {
+        webp = await stickerFromVideo(buffer, { ffmpegPath });
+      } catch {
+        // ffmpeg also failed — last resort: pass the original WebP through as-is
+        // (it's already a sticker so WhatsApp will accept it directly)
+        // Skip the size check since we can't compress it further.
+        return buffer;
+      }
+    }
+  } else if (STATIC_KINDS.has(kind)) {
+    webp = await stickerFromImage(buffer);
+  } else if (ANIMATED_KINDS.has(kind)) {
+    webp = await stickerFromVideo(buffer, { ffmpegPath });
+  } else {
+    throw new UserError('Only images, GIFs/videos and existing stickers can be turned into a sticker.');
+  }
   if (webp.length > MAX_STICKER_BYTES) throw new UserError('The sticker came out too large. Try a shorter clip or a smaller image.');
   return webp;
 }
