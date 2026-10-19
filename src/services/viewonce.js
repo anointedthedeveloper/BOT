@@ -1,5 +1,5 @@
 import { describeMessage } from '../utils/message.js';
-import { normalizeJid } from '../utils/jid.js';
+import { normalizeJid, resolveSender } from '../utils/jid.js';
 
 const VIEW_ONCE_KEYS = ['viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension'];
 const MEDIA_KEYS = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
@@ -48,8 +48,11 @@ export class ViewOnceService {
       return;
     }
 
-    const senderJid = normalizeJid(msg.key.participant ?? msg.key.remoteJid);
-    const from = msg.pushName ? `${msg.pushName} (+${senderJid.split('@')[0]})` : `+${senderJid.split('@')[0]}`;
+    const senderResolved = resolveSender(msg.key, { selfJid: this.client.selfJid });
+    // Prefer phone-number JID over LID so the caption shows a real number.
+    const senderJid = senderResolved.jid || normalizeJid(msg.key.participant ?? msg.key.remoteJid);
+    const senderNum = senderJid.split('@')[0];
+    const from = msg.pushName ? `${msg.pushName} (+${senderNum})` : `+${senderNum}`;
     const chatJid = normalizeJid(msg.key.remoteJid);
 
     try {

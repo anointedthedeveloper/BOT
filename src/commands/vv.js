@@ -1,6 +1,6 @@
 import { UserError } from '../utils/errors.js';
 import { describeMessage, unwrapMessage } from '../utils/message.js';
-import { normalizeJid } from '../utils/jid.js';
+import { normalizeJid, isPnJid, resolveSender } from '../utils/jid.js';
 
 export default {
   name: 'vv',
@@ -35,7 +35,19 @@ export default {
     }
 
     const ownerJid = ownerJids[0];
-    const from = normalizeJid(quoted.participant ?? ctx.chatJid).split('@')[0];
+
+    // Resolve sender preferring phone-number JID over LID so the caption shows a real number.
+    // quoted.participant may be a LID (@lid) on newer WhatsApp — check participantAlt too.
+    const fakeKey = {
+      remoteJid: ctx.chatJid,
+      participant: quoted.participant ?? null,
+      participantAlt: quoted.participantAlt ?? null,
+      remoteJidAlt: null,
+    };
+    const senderResolved = resolveSender(fakeKey, { selfJid: client.selfJid });
+    const fromJid = senderResolved.jid || normalizeJid(quoted.participant ?? ctx.chatJid);
+    const from = fromJid.split('@')[0];
+
     await client.sendMedia(ownerJid, {
       kind,
       buffer,
