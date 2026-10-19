@@ -13,8 +13,37 @@ export default {
   async execute(ctx) {
     const { client, config, settings } = ctx.deps;
     if (!settings.stickerEnabled) throw new UserError(`The sticker command is currently disabled. Ask the owner to enable it with ${ctx.prefix}settings sticker on.`);
+
     // Accept either a reply to media, or the command's own message carrying the media (caption = command).
-    const q = ctx.quoted ?? { info: describeMessage(ctx.msg.message) };
+    // For quoted messages, build the info ourselves — getQuoted may return a stub for premium stickers
+    // where WhatsApp strips the full payload from contextInfo. We check both the quoted payload and
+    // fall back to inspecting the raw contextInfo for a stickerMessage stub.
+    let q = ctx.quoted ? { ...ctx.quoted, info: describeMessage(ctx.quoted.message) } : null;
+
+    // If quoted exists but hasMedia is false, check if it's a sticker stub (has fileEncSha256 or
+    // fileSha256 even without full message keys — premium stickers often arrive this way)
+    if (q && !q.info.hasMedia) {
+      const stub = ctx.quoted.message?.stickerMessage ?? ctx.quoted.message;
+      if (stub?.fileSha256 || stub?.fileEncSha256 || stub?.directPath) {
+        // It's a sticker stub — treat it as a sticker kind so we can attempt download
+        q = { ...ctx.quoted, info: { kind: 'sticker', hasMedia: true, viewOnce: false, mimetype: stub.mimetype ?? 'image/webp', size: null, text: '' } };
+      }
+    }
+
+    // If still no quoted media, check the command's own message
+    if (!q || !q.info.hasMedia) {
+      q = { info: describeMessage(ctx.msg.message) };
+    }
+
+    // Debug log so we can see exactly what message structure arrived
+    ctx.log.info({
+      hasQuoted: !!ctx.quoted,
+      quotedKeys: ctx.quoted ? Object.keys(ctx.quoted.message ?? {}).join(',') : '(none)',
+      ownMsgKeys: Object.keys(ctx.msg.message ?? {}).join(','),
+      qInfoKind: q.info?.kind,
+      qInfoHasMedia: q.info?.hasMedia,
+    }, 'sticker: message inspect');
+
     if (!q.info.hasMedia) {
       throw new UserError(`Reply to a photo, GIF/video or sticker, or send one with the caption "${ctx.prefix}sticker", then try again.`);
     }
@@ -26,7 +55,7 @@ export default {
 
     let buffer;
     try {
-      buffer = ctx.quoted
+      buffer = (q.id)
         ? await client.downloadMedia({ key: { remoteJid: ctx.chatJid, id: q.id, participant: q.participant ?? undefined, fromMe: false }, message: q.message })
         : await client.downloadMedia(ctx.msg);
     } catch (err) {
