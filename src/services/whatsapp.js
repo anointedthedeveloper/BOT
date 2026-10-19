@@ -337,8 +337,8 @@ export class WhatsAppClient {
     if (str.length <= BRAND_CAPTION_LIMIT) {
       return this.sendMedia(jid, { kind: 'image', buffer: brand.buffer, mimetype: brand.mimetype, caption: str }, { quoted });
     }
-    await this.sendMedia(jid, { kind: 'image', buffer: brand.buffer, mimetype: brand.mimetype }, { quoted });
-    return this.sendText(jid, str);
+    // Text too long even for a caption — send text only, skip the image
+    return this.sendText(jid, str, { quoted });
   }
 
   async sendMedia(jid, { kind, buffer, mimetype, fileName, caption }, { quoted } = {}) {

@@ -3,8 +3,8 @@ import path from 'node:path';
 
 const MIME_BY_EXT = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
 
-/** WhatsApp media captions are much shorter than text messages; past this, send the image and the full text separately. */
-export const BRAND_CAPTION_LIMIT = 1000;
+/** WhatsApp supports up to 4096 chars in an image caption — use that as the limit. */
+export const BRAND_CAPTION_LIMIT = 4000;
 
 export async function loadBrandImage(filePath, logger) {
   if (!filePath) return null;
