@@ -1,38 +1,20 @@
 export default {
   name: 'users',
   aliases: ['listusers', 'allusers'],
-  description: 'List all users who have interacted with the bot',
+  description: 'List all registered users from the tenants collection',
   usage: 'users',
   role: 'owner',
   async execute(ctx) {
-    const { db, config } = ctx.deps;
-    const database = db.db;
+    const { tenants } = ctx.deps;
 
-    const ownerNumbers = new Set(
-      config.owners.map((o) => (o.includes('@') ? o.split('@')[0] : o))
-    );
+    const all = await tenants.list();
+    if (!all.length) return ctx.reply('📭 No users found yet.');
 
-    // Only show users who DM'd the bot (chatJid ends with @s.whatsapp.net, not a group)
-    const raw = await database
-      .collection('msg_counts')
-      .aggregate([
-        { $match: { chatJid: { $regex: '@s\.whatsapp\.net$' } } },
-        { $group: { _id: '$senderJid', count: { $sum: 1 } } },
-        { $sort: { count: -1 } },
-        { $limit: 200 },
-      ])
-      .toArray()
-      .catch(() => []);
-
-    const numbers = raw
-      .map((r) => r._id?.split('@')[0])
-      .filter((n) => n && !ownerNumbers.has(n));
-
-    if (!numbers.length) return ctx.reply('📭 No users found yet.');
+    const statusIcon = (s) => s === 'open' ? '🟢' : s === 'reconnecting' ? '🟡' : '🔴';
 
     const lines = [
-      `╭─「 👥 *All Users (${numbers.length})* 」`,
-      ...numbers.map((n, i) => `│ ${i + 1}. +${n}`),
+      `╭─「 👥 *All Users (${all.length})* 」`,
+      ...all.map((t, i) => `│ ${i + 1}. ${statusIcon(t.status)} +${t.phone}`),
       `╰────────────────────`,
     ];
 
