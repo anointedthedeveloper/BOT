@@ -47,7 +47,7 @@ export default {
 
       if (session.pairingCode) {
         clearInterval(interval);
-        await ctx.reply(`🔑 *${session.pairingCode}*`);
+        await ctx.reply(session.pairingCode);
         return;
       }
       if (session.pairingError) {
