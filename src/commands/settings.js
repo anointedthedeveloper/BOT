@@ -43,6 +43,10 @@ export default {
         `│   • status: *${statusReact ? 'ON' : 'OFF'}*`,
         `│   ${p}settings statusreact on|off`,
         `│`,
+        `│ 📬 *DM Forward*`,
+        `│   • status: *${settings.dmForward ? 'ON' : 'OFF'}*`,
+        `│   ${p}settings dmforward on|off`,
+        `│`,
         `│ 🔒 *Bot Mode*`,
         `│   • status: *${botMode}*`,
         `│   ${p}publ — public  |  ${p}priv — private`,
@@ -94,6 +98,12 @@ export default {
       return ctx.reply(`✅ Auto status react: *${arg === 'on' ? 'ON' : 'OFF'}*`);
     }
 
-    throw new UserError(`Usage: ${p}settings [delete|sticker|autoviewstatus|typing|statusreact] on|off`);
+    if (sub === 'dmforward') {
+      if (!['on', 'off'].includes(arg)) throw new UserError(`Usage: ${p}settings dmforward on|off`);
+      await settings.setDmForward(arg === 'on');
+      return ctx.reply(`✅ DM forward: *${arg === 'on' ? 'ON' : 'OFF'}*`);
+    }
+
+    throw new UserError(`Usage: ${p}settings [delete|sticker|autoviewstatus|typing|statusreact|dmforward] on|off`);
   },
 };

@@ -111,9 +111,9 @@ const _forwardedMsgMap = new Map(); // msgId -> senderJid (capped at 500 entries
 
 async function maybeForwardToOwner(msg, deps) {
   const key = msg.key;
-  // Only forward private DMs (not groups, not status)
   if (!key?.remoteJid || key.remoteJid.endsWith('@g.us') || key.remoteJid === 'status@broadcast') return;
   if (key.fromMe) return;
+  if (!deps.settings?.dmForward) return;
 
   const { client, ownerJids, permissions } = deps;
   const sender = resolveSender(key, { selfJid: client.selfJid });

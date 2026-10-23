@@ -4,6 +4,8 @@ export default {
   usage: 'ping',
   async execute(ctx) {
     const start = Date.now();
-    await ctx.reply(`🏓 Pong! *${Date.now() - start}ms*`);
+    await ctx.reply('🏓 Pong!');
+    const ms = Date.now() - start;
+    await ctx.reply(`⚡ *${ms}ms*`);
   },
 };

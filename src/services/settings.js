@@ -99,4 +99,14 @@ export class RuntimeSettings {
     await this.repo.set({ botName: clean });
     this.overrides.botName = clean;
   }
+
+  /** Whether DMs from non-owners are forwarded to the owner. Defaults to true. */
+  get dmForward() {
+    return this.overrides.dmForward ?? true;
+  }
+
+  async setDmForward(enabled) {
+    await this.repo.set({ dmForward: Boolean(enabled) });
+    this.overrides.dmForward = Boolean(enabled);
+  }
 }
