@@ -9,7 +9,7 @@ export default {
     const { sessionManager, tenants, db, logger } = ctx.deps;
     if (!sessionManager || !tenants) throw new UserError('Pairing is not available in this mode.');
 
-    const phone = ctx.args[0]?.replace(/\D/g, '');
+    const phone = ctx.argText.replace(/\D/g, '');
     if (!phone || phone.length < 7) throw new UserError('Usage: ,pair <phone>  e.g. ,pair 2349012345678');
 
     // Stop any existing non-open session for this number
@@ -47,7 +47,7 @@ export default {
 
       if (session.pairingCode) {
         clearInterval(interval);
-        await ctx.reply(`🔑 *Pairing Code for +${phone}*\n\n\`${session.pairingCode}\`\n\n_Enter this on WhatsApp › Linked Devices › Link with phone number_`);
+        await ctx.reply(`🔑 *${session.pairingCode}*`);
         return;
       }
       if (session.pairingError) {
