@@ -182,6 +182,9 @@ async function maybeHandleViewOnceReply(msg, deps) {
     quoted,
     args: [],
     argText: '',
+    isGroup: msg.key.remoteJid?.endsWith('@g.us') ?? false,
+    sender: { jid: ownerJids[0] },
+    // Always send to owner DM, never back into the chat
     reply: (text) => client.sendText(ownerJids[0], text),
   });
 }

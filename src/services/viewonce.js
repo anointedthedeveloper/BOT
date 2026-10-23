@@ -26,13 +26,6 @@ export class ViewOnceService {
   async handle(msg) {
     if (!this.ownerJid || msg.key.fromMe) return;
 
-    // If the bot IS the owner (same number), auto-forward via this service would send to
-    // self-chat (Saved Messages) and the echo could trigger a re-process loop.
-    // In this case we skip the auto-forward — the owner can use ,vv manually instead.
-    const selfNum = this.client.selfJid ? normalizeJid(this.client.selfJid).split('@')[0] : null;
-    const ownerNum = this.ownerJid.split('@')[0];
-    if (selfNum && selfNum === ownerNum) return;
-
     const info = describeMessage(msg.message);
     if (!info.viewOnce || !info.hasMedia) return;
 
