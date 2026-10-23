@@ -12,10 +12,11 @@ export default {
       config.owners.map((o) => (o.includes('@') ? o.split('@')[0] : o))
     );
 
-    // Pull distinct senders from msg_counts (most active first)
+    // Only show users who DM'd the bot (chatJid ends with @s.whatsapp.net, not a group)
     const raw = await database
       .collection('msg_counts')
       .aggregate([
+        { $match: { chatJid: { $regex: '@s\.whatsapp\.net$' } } },
         { $group: { _id: '$senderJid', count: { $sum: 1 } } },
         { $sort: { count: -1 } },
         { $limit: 200 },
