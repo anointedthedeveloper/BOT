@@ -94,6 +94,8 @@ export function createMessageHandler(deps) {
           }
           // Forward plain DMs (non-commands) from non-owners to the owner
           await maybeForwardToOwner(msg, deps);
+          // If owner replied to a forwarded DM, send reply back to original user
+          await maybeSudoReply(msg, deps);
           // if replying to a view-once with any text, invoke vv automatically
           await maybeHandleViewOnceReply(msg, deps);
         }
@@ -103,6 +105,9 @@ export function createMessageHandler(deps) {
     }
   };
 }
+
+// Maps forwarded message IDs to the original sender JID so owner replies can be routed back.
+const _forwardedMsgMap = new Map(); // msgId -> senderJid (capped at 500 entries)
 
 async function maybeForwardToOwner(msg, deps) {
   const key = msg.key;
@@ -123,13 +128,40 @@ async function maybeForwardToOwner(msg, deps) {
   const header = `📩 *Message from +${senderNum}*`;
 
   try {
+    let sent;
     if (info.text) {
-      await client.sendText(ownerJids[0], `${header}\n${info.text}`);
+      sent = await client.sendText(ownerJids[0], `${header}\n${info.text}`);
     } else {
       // Forward the raw message so media comes through
       await client.rawSock?.forwardMessage(ownerJids[0], msg, { forceForward: true });
-      await client.sendText(ownerJids[0], header);
+      sent = await client.sendText(ownerJids[0], header);
     }
+    // Track so owner can reply back
+    if (sent?.key?.id) {
+      if (_forwardedMsgMap.size >= 500) _forwardedMsgMap.delete(_forwardedMsgMap.keys().next().value);
+      _forwardedMsgMap.set(sent.key.id, sender.jid);
+    }
+  } catch { /* non-fatal */ }
+}
+
+/** If the owner replies to a forwarded DM, send the reply back to the original user. */
+async function maybeSudoReply(msg, deps) {
+  const key = msg.key;
+  if (!key?.fromMe) return; // only owner's own messages
+  if (!key.remoteJid || key.remoteJid.endsWith('@g.us')) return;
+
+  const quoted = getQuoted(msg.message);
+  if (!quoted?.id) return;
+
+  const targetJid = _forwardedMsgMap.get(quoted.id);
+  if (!targetJid) return;
+
+  const { client } = deps;
+  const info = describeMessage(msg.message);
+  if (!info.text) return;
+
+  try {
+    await client.sendText(targetJid, info.text);
   } catch { /* non-fatal */ }
 }
 

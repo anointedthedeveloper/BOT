@@ -6,9 +6,9 @@ export default {
   name: 'vv',
   description: 'Reveal a view-once message you reply to',
   usage: 'vv',
-  role: 'owner',
+  open: true,
   async execute(ctx) {
-    const { client, ownerJids } = ctx.deps;
+    const { client } = ctx.deps;
     const quoted = ctx.quoted;
 
     if (!quoted) throw new UserError('Reply to a view-once message with ,vv');
@@ -34,10 +34,7 @@ export default {
       throw new UserError('Failed to download the view-once media — it may have expired');
     }
 
-    const ownerJid = ownerJids[0];
-
     // Resolve sender preferring phone-number JID over LID so the caption shows a real number.
-    // quoted.participant may be a LID (@lid) on newer WhatsApp — check participantAlt too.
     const fakeKey = {
       remoteJid: ctx.chatJid,
       participant: quoted.participant ?? null,
@@ -47,15 +44,16 @@ export default {
     const senderResolved = resolveSender(fakeKey, { selfJid: client.selfJid });
     const fromJid = senderResolved.jid || normalizeJid(quoted.participant ?? ctx.chatJid);
     const isLid = fromJid.endsWith('@lid');
-    // If still a LID, avoid showing the meaningless internal ID — use pushName or a fallback
     let from;
     if (isLid) {
-      from = ctx.msg?.pushName ?? `unknown`;
+      from = ctx.msg?.pushName ?? 'unknown';
     } else {
       from = fromJid.split('@')[0];
     }
 
-    await client.sendMedia(ownerJid, {
+    // Send to caller's DM (works for both owner and regular users)
+    const replyJid = ctx.isGroup ? ctx.sender.jid : ctx.chatJid;
+    await client.sendMedia(replyJid, {
       kind,
       buffer,
       mimetype,
