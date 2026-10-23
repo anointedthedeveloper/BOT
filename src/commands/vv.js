@@ -8,7 +8,7 @@ export default {
   usage: 'vv',
   open: true,
   async execute(ctx) {
-    const { client } = ctx.deps;
+    const { client, ownerJids } = ctx.deps;
     const quoted = ctx.quoted;
 
     if (!quoted) throw new UserError('Reply to a view-once message with ,vv');
@@ -51,14 +51,13 @@ export default {
       from = fromJid.split('@')[0];
     }
 
-    // Send to caller's DM (works for both owner and regular users)
-    const replyJid = ctx.isGroup ? ctx.sender.jid : ctx.chatJid;
-    await client.sendMedia(replyJid, {
+    // Always send to owner's DM, never into the chat it was triggered from
+    await client.sendMedia(ownerJids[0], {
       kind,
       buffer,
       mimetype,
       fileName,
-      caption: `👁️ View-once from +${from}`,
+      caption: `👁️ View-once from ${from}`,
     });
   },
 };
