@@ -21,10 +21,10 @@ export function unwrapMessage(message) {
   let content = message;
   let viewOnce = false;
   for (let i = 0; i < 5 && content; i++) {
-    const wrapper = WRAPPERS.find((w) => content[w]?.message);
+    const wrapper = WRAPPERS.find((w) => content[w]);
     if (!wrapper) break;
     if (VIEW_ONCE_WRAPPERS.includes(wrapper)) viewOnce = true;
-    content = content[wrapper].message;
+    content = content[wrapper].message ?? content[wrapper];
   }
   return { content: content ?? null, viewOnce };
 }

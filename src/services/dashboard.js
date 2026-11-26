@@ -289,7 +289,11 @@ export function createDashboard({ sessionManager, tenants, getStatus, logger, db
       return send(s.mongo ? 200 : 503, s);
     }
 
-    if (req.method === 'GET' && (path === '/fd' || path === '/fd/')) {
+    if (req.method === 'GET' && (path === '/' || path === '/fd' || path === '/fd/')) {
+      if (path === '/') {
+        res.writeHead(302, { location: '/fd' });
+        return res.end();
+      }
       return send(200, PAGE, 'text/html');
     }
 
