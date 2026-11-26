@@ -53,7 +53,7 @@ export async function createApp(config, { logger = createLogger(config), databas
   const ownerJids = config.owners.map((o) => (o.includes('@') ? o : numberToJid(o)));
   const archive = new ArchiveService({ config, repos, logger, client, mediaStore, settings });
   const deletions = new DeletionNotifier({ repos, client, logger, mediaStore, ttlHours: config.privacy.cacheTtlHours, ownerJid: ownerJids[0] });
-  const viewOnce = new ViewOnceService({ client, logger, ownerJid: ownerJids[0] });
+  const viewOnce = new ViewOnceService({ client, logger, ownerJid: ownerJids[0], db: database.db, cipher, ttlHours: config.privacy.cacheTtlHours });
 
   errorReporter.setNotifier((text) => Promise.all(ownerJids.map((j) => client.sendText(j, text))));
 

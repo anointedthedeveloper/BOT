@@ -17,16 +17,60 @@ function unwrapInner(message) {
 }
 
 export class ViewOnceService {
-  constructor({ client, logger, ownerJid }) {
+  constructor({ client, logger, ownerJid, db = null, cipher = null, ttlHours = 24 }) {
     this.client = client;
     this.logger = logger;
     this.ownerJid = ownerJid;
-    // Cache: msgId -> { buffer, info, from, chatJid }
+    // L1 cache: msgId -> { buffer, info, from, chatJid }
     this._cache = new Map();
+    // L2 cache: MongoDB (survives restarts/deploys). Expires via TTL index.
+    this.col = db ? db.collection('viewonce_cache') : null;
+    this.cipher = cipher;
+    this.ttlMs = ttlHours * 3_600_000;
+    this._indexReady = this.col
+      ? this.col.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }).catch((err) => {
+        this.logger.warn({ err: err.message }, 'view-once: ttl index failed');
+      })
+      : null;
   }
 
-  getCache(msgId) {
-    return this._cache.get(msgId) ?? null;
+  #docId(msgId) {
+    return `${this.client.selfJid ?? ''}:${msgId}`;
+  }
+
+  async getCache(msgId) {
+    const hit = this._cache.get(msgId);
+    if (hit) return hit;
+    if (!this.col) return null;
+    try {
+      const doc = await this.col.findOne({ _id: this.#docId(msgId) });
+      if (!doc) return null;
+      const raw = Buffer.from(doc.data.buffer ?? doc.data);
+      const buffer = this.cipher ? this.cipher.decryptBuffer(raw) : raw;
+      const entry = { buffer, info: doc.info, from: doc.from, chatJid: doc.chatJid };
+      this._cache.set(msgId, entry);
+      return entry;
+    } catch (err) {
+      this.logger.warn({ err: err.message, msgId }, 'view-once: db cache read failed');
+      return null;
+    }
+  }
+
+  async #persist(msgId, entry) {
+    if (!this.col) return;
+    // BSON documents are capped at 16MB; skip persisting anything larger (stays in memory only).
+    if (entry.buffer.length > 15 * 1024 * 1024) return;
+    try {
+      await this._indexReady;
+      const data = this.cipher ? this.cipher.encryptBuffer(entry.buffer) : entry.buffer;
+      await this.col.replaceOne(
+        { _id: this.#docId(msgId) },
+        { _id: this.#docId(msgId), data, info: entry.info, from: entry.from, chatJid: entry.chatJid, expiresAt: new Date(Date.now() + this.ttlMs) },
+        { upsert: true },
+      );
+    } catch (err) {
+      this.logger.warn({ err: err.message, msgId }, 'view-once: db cache write failed');
+    }
   }
 
   async handle(msg) {
@@ -74,7 +118,9 @@ export class ViewOnceService {
     // Cache so ,vv can retrieve it by message ID (quoted messages have stripped media fields)
     if (msg.key.id) {
       if (this._cache.size >= 50) this._cache.delete(this._cache.keys().next().value);
-      this._cache.set(msg.key.id, { buffer, info, from, chatJid });
+      const entry = { buffer, info, from, chatJid };
+      this._cache.set(msg.key.id, entry);
+      await this.#persist(msg.key.id, entry);
       this.logger.info({ msgId: msg.key.id, kind: info.kind, cacheSize: this._cache.size }, 'view-once: cached');
     }
 

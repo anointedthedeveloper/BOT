@@ -17,8 +17,8 @@ export default {
 
     // The quoted message proto has stripped media fields (no url/directPath/mediaKey).
     // ViewOnceService downloads and caches the buffer when the original message arrives.
-    const cached = viewOnce.getCache(quoted.id);
-    ctx.deps.logger.info({ quotedId: quoted.id, cacheKeys: [...viewOnce._cache.keys()] }, 'vv: cache lookup');
+    const cached = await viewOnce.getCache(quoted.id);
+    ctx.deps.logger.info({ quotedId: quoted.id, hit: Boolean(cached) }, 'vv: cache lookup');
     if (!cached) throw new UserError('View-once media not in cache — the bot must receive it first before you can use ,vv');
 
     const { buffer, info: cachedInfo, from } = cached;
