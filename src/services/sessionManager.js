@@ -119,7 +119,7 @@ export class SessionManager {
       const ownerJid = numberToJid(phone);
       const archive = new ArchiveService({ config: tenantConfig, repos, logger: log, client, mediaStore, settings });
       const deletions = new DeletionNotifier({ repos, client, logger: log, mediaStore, ttlHours: this.config.privacy.cacheTtlHours, ownerJid });
-      const viewOnce = new ViewOnceService({ client, logger: log, ownerJid: numberToJid(this.config.owners[0]), db: this.db, cipher: this.cipher, ttlHours: this.config.privacy.cacheTtlHours });
+      const viewOnce = new ViewOnceService({ client, logger: log, ownerJid, db: this.db, cipher: this.cipher, ttlHours: this.config.privacy.cacheTtlHours });
 
       const deps = {
         config: tenantConfig, logger: log, db: { db: this.db }, cipher: this.cipher,
