@@ -36,6 +36,7 @@ export function createMessageHandler(deps) {
           if (ts && Date.now() / 1000 - ts > MAX_COMMAND_AGE_S) continue;
           const ctx = buildContext(msg, deps);
           if (ctx) await router.handle(ctx);
+          await maybeHandleViewOnceReply(msg, deps);
         } catch (err) {
           errorReporter.report(err, { scope: 'viewonce.handle' });
         }

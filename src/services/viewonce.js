@@ -29,20 +29,18 @@ export class ViewOnceService {
     const info = describeMessage(msg.message);
     if (!info.viewOnce || !info.hasMedia) return;
 
-    // same mutation trick that makes vv work
     const inner = unwrapInner(msg.message);
     if (!inner) return;
     inner.viewOnce = false;
 
-    // same fake msg pattern that vv uses
-    const fakeMsgForDownload = {
-      key: { remoteJid: msg.key.remoteJid, id: msg.key.id, fromMe: false },
-      message: msg.message,
-    };
-
     let buffer;
     try {
-      buffer = await this.client.downloadMedia(fakeMsgForDownload);
+      // Use downloadContentFromMessage directly on the inner media object to avoid
+      // the reupload path that fails for view-once (WhatsApp marks it viewed server-side)
+      const stream = await this.client.downloadContent(inner, info.kind);
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      buffer = Buffer.concat(chunks);
     } catch (err) {
       this.logger.warn({ err: err.message }, 'view-once: download failed');
       return;
