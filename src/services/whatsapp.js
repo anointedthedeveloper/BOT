@@ -367,7 +367,13 @@ export class WhatsAppClient {
   /** Downloads view-once media directly from CDN using the already-unwrapped inner media object. */
   async downloadMediaViewOnce(inner, mediaType) {
     this.#requireOpen();
-    return this.baileys.downloadContentFromMessage(inner, mediaType);
+    // Ensure empty strings don't get passed as directPath/url — Baileys throws on those
+    const obj = {
+      mediaKey: inner.mediaKey,
+      directPath: inner.directPath || undefined,
+      url: inner.url || undefined,
+    };
+    return this.baileys.downloadContentFromMessage(obj, mediaType);
   }
 
   /** Downloads content directly from a media object (used for view-once). */

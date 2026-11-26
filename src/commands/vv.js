@@ -1,6 +1,5 @@
 import { UserError } from '../utils/errors.js';
 import { describeMessage } from '../utils/message.js';
-import { normalizeJid, resolveSender } from '../utils/jid.js';
 
 export default {
   name: 'vv',
