@@ -364,10 +364,10 @@ export class WhatsAppClient {
     return this.baileys.downloadMediaMessage(messageLike, 'buffer', {}, { logger: this.logger, reuploadRequest: sock.updateMediaMessage });
   }
 
-  /** Downloads view-once media — skips reupload entirely so it works even after WhatsApp marks it viewed. */
-  async downloadMediaViewOnce(messageLike) {
+  /** Downloads view-once media directly from CDN using the already-unwrapped inner media object. */
+  async downloadMediaViewOnce(inner, mediaType) {
     this.#requireOpen();
-    return this.baileys.downloadMediaMessage(messageLike, 'buffer', {}, { logger: this.logger });
+    return this.baileys.downloadContentFromMessage(inner, mediaType);
   }
 
   /** Downloads content directly from a media object (used for view-once). */

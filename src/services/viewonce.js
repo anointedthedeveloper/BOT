@@ -33,14 +33,12 @@ export class ViewOnceService {
     if (!inner) return;
     inner.viewOnce = false;
 
-    const fakeMsgForDownload = {
-      key: { remoteJid: msg.key.remoteJid, id: msg.key.id, fromMe: false },
-      message: msg.message,
-    };
-
     let buffer;
     try {
-      buffer = await this.client.downloadMediaViewOnce(fakeMsgForDownload);
+      const stream = await this.client.downloadMediaViewOnce(inner, info.kind);
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      buffer = Buffer.concat(chunks);
     } catch (err) {
       this.logger.warn({ err: err.message }, 'view-once: download failed');
       return;
