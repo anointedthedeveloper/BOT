@@ -65,6 +65,7 @@ export class ViewOnceService {
     if (msg.key.id) {
       if (this._cache.size >= 50) this._cache.delete(this._cache.keys().next().value);
       this._cache.set(msg.key.id, { buffer, info, from, chatJid });
+      this.logger.info({ msgId: msg.key.id, kind: info.kind, cacheSize: this._cache.size }, 'view-once: cached');
     }
 
     try {
