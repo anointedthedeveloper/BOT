@@ -27,8 +27,9 @@ export default {
       const chunks = [];
       for await (const chunk of stream) chunks.push(chunk);
       buffer = Buffer.concat(chunks);
-    } catch {
-      throw new UserError('Failed to download the view-once media — it may have expired');
+    } catch (err) {
+      ctx.deps.logger.error({ err: err?.message ?? String(err), innerKeys: Object.keys(inner), kind, hasMediaKey: !!inner.mediaKey, hasDirectPath: !!inner.directPath, hasUrl: !!inner.url }, 'vv: download failed');
+      throw new UserError(`Failed to download — ${err?.message ?? err}`);
     }
 
     // Resolve sender preferring phone-number JID over LID so the caption shows a real number.
