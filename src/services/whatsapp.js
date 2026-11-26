@@ -364,16 +364,30 @@ export class WhatsAppClient {
     return this.baileys.downloadMediaMessage(messageLike, 'buffer', {}, { logger: this.logger, reuploadRequest: sock.updateMediaMessage });
   }
 
-  /** Downloads view-once media directly from CDN using the already-unwrapped inner media object. */
+  /** Downloads view-once media using the already-unwrapped inner media object. */
   async downloadMediaViewOnce(inner, mediaType) {
-    this.#requireOpen();
-    // Ensure empty strings don't get passed as directPath/url — Baileys throws on those
+    const sock = this.#requireOpen();
+    // Normalise mediaKey: Baileys needs a Buffer/Uint8Array, not a base64 string
+    let mediaKey = inner.mediaKey;
+    if (typeof mediaKey === 'string') mediaKey = Buffer.from(mediaKey, 'base64');
     const obj = {
-      mediaKey: inner.mediaKey,
+      ...inner,
+      mediaKey,
       directPath: inner.directPath || undefined,
       url: inner.url || undefined,
+      viewOnce: false,
     };
-    return this.baileys.downloadContentFromMessage(obj, mediaType);
+    // Try direct CDN download first; fall back to reupload if CDN URL is missing
+    try {
+      return await this.baileys.downloadContentFromMessage(obj, mediaType);
+    } catch {
+      return this.baileys.downloadMediaMessage(
+        { message: { [`${mediaType}Message`]: obj } },
+        'buffer',
+        {},
+        { logger: this.logger, reuploadRequest: sock.updateMediaMessage },
+      );
+    }
   }
 
   /** Downloads content directly from a media object (used for view-once). */

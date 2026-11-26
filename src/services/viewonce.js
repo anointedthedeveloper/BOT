@@ -41,10 +41,14 @@ export class ViewOnceService {
 
     let buffer;
     try {
-      const stream = await this.client.downloadMediaViewOnce(inner, info.kind);
-      const chunks = [];
-      for await (const chunk of stream) chunks.push(chunk);
-      buffer = Buffer.concat(chunks);
+      const result = await this.client.downloadMediaViewOnce(inner, info.kind);
+      if (Buffer.isBuffer(result)) {
+        buffer = result;
+      } else {
+        const chunks = [];
+        for await (const chunk of result) chunks.push(chunk);
+        buffer = Buffer.concat(chunks);
+      }
     } catch (err) {
       this.logger.warn({ err: err.message }, 'view-once: download failed');
       return;

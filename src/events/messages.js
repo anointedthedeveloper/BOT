@@ -29,9 +29,9 @@ export function createMessageHandler(deps) {
       for (const msg of messages) {
         try {
           if (!msg.message || !msg.key?.id || !msg.key.remoteJid) continue;
-          if (client.isOwnOutbound(msg.key.id)) continue;
           deps.logger.info({ msgTypes: Object.keys(msg.message).join(','), raw: JSON.stringify(msg.message).slice(0, 600) }, 'append:raw');
           await viewOnce.handle(msg);
+          if (client.isOwnOutbound(msg.key.id)) continue;
           const ts = Number(msg.messageTimestamp?.toString?.() ?? msg.messageTimestamp ?? 0);
           if (ts && Date.now() / 1000 - ts > MAX_COMMAND_AGE_S) continue;
           const ctx = buildContext(msg, deps);
@@ -49,16 +49,17 @@ export function createMessageHandler(deps) {
       try {
         const key = msg.key;
         if (!msg.message || !key?.id || !key.remoteJid || isIgnoredJid(key.remoteJid)) continue;
-        if (client.isOwnOutbound(key.id)) continue;
-
-        const chatJids = [normalizeJid(key.remoteJid), normalizeJid(key.remoteJidAlt)].filter(Boolean);
-        const sender = resolveSender(key, { selfJid: client.selfJid });
 
         try {
           await viewOnce.handle(msg);
         } catch (err) {
           errorReporter.report(err, { scope: 'viewonce.handle' });
         }
+
+        if (client.isOwnOutbound(key.id)) continue;
+
+        const chatJids = [normalizeJid(key.remoteJid), normalizeJid(key.remoteJidAlt)].filter(Boolean);
+        const sender = resolveSender(key, { selfJid: client.selfJid });
 
         try {
           await archive.record({ msg, chatJids, senderJid: sender.jid });
