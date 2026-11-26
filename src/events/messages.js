@@ -15,6 +15,16 @@ export function createMessageHandler(deps) {
   const { client, archive, viewOnce, router, errorReporter } = deps;
 
   return async function onUpsert({ messages, type }) {
+    // TEMP diagnostics: show every incoming upsert (incl. ones with no decrypted body) so we can see how a view-once actually arrives
+    for (const m of messages) {
+      if (m.key?.remoteJid === 'status@broadcast') continue;
+      deps.logger.info({
+        upsertType: type, id: m.key?.id, fromMe: m.key?.fromMe, chat: m.key?.remoteJid?.slice(-12),
+        stub: m.messageStubType ?? null, stubParams: m.messageStubParameters ?? null,
+        keys: m.message ? Object.keys(m.message).join(',') : 'NO_MESSAGE_BODY',
+        viewOnceFlag: describeMessage(m.message ?? {}).viewOnce,
+      }, 'upsert:in');
+    }
     // auto-read WhatsApp statuses
     if (deps.settings?.autoViewStatus) {
       const statusKeys = messages
