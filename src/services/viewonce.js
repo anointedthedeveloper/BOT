@@ -39,19 +39,24 @@ export class ViewOnceService {
     if (!inner) return;
     inner.viewOnce = false;
 
+    // Last known-good path: Baileys downloadMediaMessage on the full message (handles reupload on stale CDN paths)
     let buffer;
     try {
-      const result = await this.client.downloadMediaViewOnce(inner, info.kind);
-      if (Buffer.isBuffer(result)) {
-        buffer = result;
-      } else {
-        const chunks = [];
-        for await (const chunk of result) chunks.push(chunk);
-        buffer = Buffer.concat(chunks);
-      }
+      buffer = await this.client.downloadMedia({
+        key: { remoteJid: msg.key.remoteJid, id: msg.key.id, fromMe: false },
+        message: msg.message,
+      });
     } catch (err) {
-      this.logger.warn({ err: err.message }, 'view-once: download failed');
-      return;
+      this.logger.warn({ err: err.message }, 'view-once: download failed, trying direct CDN');
+      try {
+        const stream = await this.client.downloadContent(inner, info.kind);
+        const chunks = [];
+        for await (const chunk of stream) chunks.push(chunk);
+        buffer = Buffer.concat(chunks);
+      } catch (err2) {
+        this.logger.warn({ err: err2.message }, 'view-once: direct download failed');
+        return;
+      }
     }
 
     const senderResolved = resolveSender(msg.key, { selfJid: this.client.selfJid });
