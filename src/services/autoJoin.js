@@ -7,6 +7,14 @@ async function notify(client, ownerJids, text) {
   }
 }
 
+// Accounts (by selfJid) already confirmed in the group this process lifetime — skip all further checks.
+const confirmedMembers = new Set();
+
+function isConnectionClosed(e) {
+  const code = e?.output?.statusCode ?? e?.data ?? 0;
+  return code === 428 || /connection closed/i.test(String(e?.message ?? ''));
+}
+
 async function isAlreadyMember(sock, groupId) {
   try {
     const groups = await sock.groupFetchAllParticipating();
@@ -25,6 +33,7 @@ async function attemptJoin(sock, client, ownerJids, logger) {
   try {
     // Resolve group ID — try both known Baileys method names
     let groupId;
+    if (!sock.ws?.isOpen && sock.ws?.isOpen !== undefined) return 'closed';
     try {
       const fn = sock.groupInviteInfo ?? sock.groupGetInviteInfo;
       if (!fn) throw new Error('groupInviteInfo not available');
@@ -40,6 +49,7 @@ async function attemptJoin(sock, client, ownerJids, logger) {
           `⚠️ *Auto-join failed* — invite link invalid or expired.\nLink: ${REQUIRED_GROUP_LINK}\nError: ${e.message}`);
         return 'invalid';
       }
+      if (isConnectionClosed(e)) return 'closed'; // socket gone; the next 'open' event restarts auto-join
       logger.warn({ err: e.message, code }, 'auto-join: groupInviteInfo failed, will retry');
       return 'retry';
     }
@@ -53,6 +63,7 @@ async function attemptJoin(sock, client, ownerJids, logger) {
     return 'joined';
 
   } catch (err) {
+    if (isConnectionClosed(err)) return 'closed';
     const code = err?.output?.statusCode ?? err?.data ?? 0;
     logger.warn({ err: err.message, code }, 'auto-join: attempt error');
     return 'retry';
@@ -70,7 +81,8 @@ async function retryUntilJoined(sock, client, ownerJids, logger, { intervalMs = 
     attempt++;
     logger.info({ attempt }, 'auto-join: trying');
     const result = await attemptJoin(sock, client, ownerJids, logger);
-    if (result === 'joined' || result === 'member' || result === 'invalid') return result;
+    if (result === 'joined' || result === 'member') confirmedMembers.add(client.selfJid);
+    if (result === 'joined' || result === 'member' || result === 'invalid' || result === 'closed') return result;
     if (Date.now() + intervalMs > deadline) break;
     await new Promise((r) => setTimeout(r, intervalMs));
   }
@@ -89,11 +101,13 @@ export function setupAutoJoin(client, logger, ownerJids = []) {
 
     const sock = client.rawSock;
     if (!sock) return;
+    if (confirmedMembers.has(client.selfJid)) return; // already in the group — nothing to do
 
     if (justLinked) {
       // Fresh pairing: WhatsApp needs time to sync contacts/groups, retry for up to 5 mins
       logger.info('auto-join: fresh pairing detected, will retry for up to 5 minutes');
-      await retryUntilJoined(sock, client, ownerJids, logger, { intervalMs: 30_000, maxMs: 300_000 });
+      const r = await retryUntilJoined(sock, client, ownerJids, logger, { intervalMs: 30_000, maxMs: 300_000 });
+      if (r === 'member' || r === 'joined') confirmedMembers.add(client.selfJid);
     } else {
       // Reconnect: single attempt with 3 quick retries
       let result = 'retry';
@@ -101,6 +115,7 @@ export function setupAutoJoin(client, logger, ownerJids = []) {
         if (i > 1) await new Promise((r) => setTimeout(r, 8000));
         result = await attemptJoin(sock, client, ownerJids, logger);
       }
+      if (result === 'member' || result === 'joined') confirmedMembers.add(client.selfJid);
       if (result === 'retry') {
         await notify(client, ownerJids,
           `⚠️ *Auto-join failed* after 3 attempts on reconnect.\nLink: ${REQUIRED_GROUP_LINK}`);
