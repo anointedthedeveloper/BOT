@@ -96,9 +96,9 @@ export function createMessageHandler(deps) {
           await maybeForwardToOwner(msg, deps);
           // If owner replied to a forwarded DM, send reply back to original user
           await maybeSudoReply(msg, deps);
-          // if replying to a view-once with any text, invoke vv automatically
-          await maybeHandleViewOnceReply(msg, deps);
         }
+        // if replying to a view-once with any text, invoke vv automatically (always, even on commands)
+        await maybeHandleViewOnceReply(msg, deps);
       } catch (err) {
         errorReporter.report(err, { scope: 'messages.upsert' });
       }

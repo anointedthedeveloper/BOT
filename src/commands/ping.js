@@ -4,7 +4,7 @@ export default {
   usage: 'ping',
   async execute(ctx) {
     const start = Date.now();
-    await ctx.reply('🏓 Pong!');
-    await ctx.reply(`⚡ *${Date.now() - start}ms*`);
+    await ctx.deps.client.sendText(ctx.chatJid, '\u200b'); // dummy send to measure RTT
+    await ctx.reply(`🏓 Pong! ⚡ *${Date.now() - start}ms*`);
   },
 };
