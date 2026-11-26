@@ -21,13 +21,14 @@ export default {
     if (!inner) throw new UserError('Could not read the view-once message content');
     inner.viewOnce = false;
 
+    const fakeMsgForDownload = {
+      key: { remoteJid: ctx.chatJid, id: quoted.id, fromMe: false },
+      message: quoted.message,
+    };
+
     let buffer;
     try {
-      // Use downloadContentFromMessage directly — avoids the reupload path that fails for view-once
-      const stream = await client.downloadContent(inner, kind);
-      const chunks = [];
-      for await (const chunk of stream) chunks.push(chunk);
-      buffer = Buffer.concat(chunks);
+      buffer = await client.downloadMedia(fakeMsgForDownload);
     } catch {
       throw new UserError('Failed to download the view-once media — it may have expired');
     }

@@ -33,14 +33,14 @@ export class ViewOnceService {
     if (!inner) return;
     inner.viewOnce = false;
 
+    const fakeMsgForDownload = {
+      key: { remoteJid: msg.key.remoteJid, id: msg.key.id, fromMe: false },
+      message: msg.message,
+    };
+
     let buffer;
     try {
-      // Use downloadContentFromMessage directly on the inner media object to avoid
-      // the reupload path that fails for view-once (WhatsApp marks it viewed server-side)
-      const stream = await this.client.downloadContent(inner, info.kind);
-      const chunks = [];
-      for await (const chunk of stream) chunks.push(chunk);
-      buffer = Buffer.concat(chunks);
+      buffer = await this.client.downloadMedia(fakeMsgForDownload);
     } catch (err) {
       this.logger.warn({ err: err.message }, 'view-once: download failed');
       return;
