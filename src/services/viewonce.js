@@ -30,13 +30,14 @@ export class ViewOnceService {
   }
 
   async handle(msg) {
-    if (!this.ownerJid) return;
+    if (!this.ownerJid) { this.logger.warn('view-once: no ownerJid configured'); return; }
 
     const info = describeMessage(msg.message);
     if (!info.viewOnce || !info.hasMedia) return;
+    this.logger.info({ msgId: msg.key.id, kind: info.kind, keys: Object.keys(msg.message).join(',') }, 'view-once: received');
 
     const inner = unwrapInner(msg.message);
-    if (!inner) return;
+    if (!inner) { this.logger.warn({ msgId: msg.key.id }, 'view-once: could not unwrap inner media'); return; }
     inner.viewOnce = false;
 
     // Last known-good path: Baileys downloadMediaMessage on the full message (handles reupload on stale CDN paths)
