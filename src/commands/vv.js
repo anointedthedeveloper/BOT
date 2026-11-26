@@ -28,7 +28,7 @@ export default {
 
     let buffer;
     try {
-      buffer = await client.downloadMedia(fakeMsgForDownload);
+      buffer = await client.downloadMediaViewOnce(fakeMsgForDownload);
     } catch {
       throw new UserError('Failed to download the view-once media — it may have expired');
     }

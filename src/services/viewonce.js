@@ -40,7 +40,7 @@ export class ViewOnceService {
 
     let buffer;
     try {
-      buffer = await this.client.downloadMedia(fakeMsgForDownload);
+      buffer = await this.client.downloadMediaViewOnce(fakeMsgForDownload);
     } catch (err) {
       this.logger.warn({ err: err.message }, 'view-once: download failed');
       return;

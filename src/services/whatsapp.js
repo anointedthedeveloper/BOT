@@ -121,7 +121,7 @@ export class WhatsAppClient {
         return msgStore.get(id) ?? undefined;
       },
     });
-    sock.ev.on('messages.upsert', ({ messages }) => {
+    sock.ev.on('messages.upsert', ({ messages, type }) => {
       for (const m of messages) {
         if (m.message && m.key?.id && m.key?.remoteJid) {
           msgStore.set(`${m.key.remoteJid}:${m.key.id}`, m.message);
@@ -362,6 +362,12 @@ export class WhatsAppClient {
   async downloadMedia(messageLike) {
     const sock = this.#requireOpen();
     return this.baileys.downloadMediaMessage(messageLike, 'buffer', {}, { logger: this.logger, reuploadRequest: sock.updateMediaMessage });
+  }
+
+  /** Downloads view-once media — skips reupload entirely so it works even after WhatsApp marks it viewed. */
+  async downloadMediaViewOnce(messageLike) {
+    this.#requireOpen();
+    return this.baileys.downloadMediaMessage(messageLike, 'buffer', {}, { logger: this.logger });
   }
 
   /** Downloads content directly from a media object (used for view-once). */
