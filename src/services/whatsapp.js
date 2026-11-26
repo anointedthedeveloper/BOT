@@ -108,10 +108,18 @@ export class WhatsAppClient {
     const { Browsers } = this.baileys;
     const makeWASocket = this.baileys.default ?? this.baileys.makeWASocket;
     const msgStore = new Map();
+    // WA_BROWSER=android makes WhatsApp treat this as an Android companion, which is needed to receive
+    // view-once media (web-style companions get an empty stub). Changing it requires re-pairing the number.
+    const wantAndroid = String(process.env.WA_BROWSER ?? '').toLowerCase() === 'android';
+    let browser = Browsers.appropriate('Chrome');
+    if (wantAndroid) {
+      if (typeof Browsers.android === 'function') browser = Browsers.android('Chrome');
+      else this.logger.warn('WA_BROWSER=android set but Browsers.android is not available in this Baileys build');
+    }
     const sock = makeWASocket({
       auth: this.auth.state,
       logger: this.logger.child({ module: 'baileys' }, { level: this.config.logging.baileysLevel }),
-      browser: Browsers.appropriate('Chrome'),
+      browser,
       markOnlineOnConnect: false,
       syncFullHistory: false,
       generateHighQualityLinkPreview: false,
