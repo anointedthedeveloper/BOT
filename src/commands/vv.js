@@ -1,6 +1,6 @@
 import { UserError } from '../utils/errors.js';
-import { describeMessage, unwrapMessage } from '../utils/message.js';
-import { normalizeJid, isPnJid, resolveSender } from '../utils/jid.js';
+import { describeMessage } from '../utils/message.js';
+import { normalizeJid, resolveSender } from '../utils/jid.js';
 
 export default {
   name: 'vv',
@@ -8,68 +8,28 @@ export default {
   usage: 'vv',
   open: true,
   async execute(ctx) {
-    const { client, ownerJids } = ctx.deps;
+    const { client, ownerJids, viewOnce } = ctx.deps;
     const quoted = ctx.quoted;
 
     if (!quoted) throw new UserError('Reply to a view-once message with ,vv');
 
-    const { viewOnce, hasMedia, kind, mimetype, fileName } = describeMessage(quoted.message);
-    if (!viewOnce || !hasMedia) throw new UserError('The replied message is not a view-once media message');
+    const { viewOnce: isViewOnce, hasMedia, kind, mimetype, fileName } = describeMessage(quoted.message);
+    if (!isViewOnce || !hasMedia) throw new UserError('The replied message is not a view-once media message');
 
-    // Mutate viewOnce flag so Baileys downloads it as normal media
-    const inner = unwrapInner(quoted.message);
-    if (!inner) throw new UserError('Could not read the view-once message content');
-    inner.viewOnce = false;
+    // The quoted message proto has stripped media fields (no url/directPath/mediaKey).
+    // ViewOnceService downloads and caches the buffer when the original message arrives.
+    const cached = viewOnce.getCache(quoted.id);
+    if (!cached) throw new UserError('View-once media not in cache — the bot must receive it first before you can use ,vv');
 
-    let buffer;
-    try {
-      const stream = await client.downloadMediaViewOnce(inner, kind);
-      const chunks = [];
-      for await (const chunk of stream) chunks.push(chunk);
-      buffer = Buffer.concat(chunks);
-    } catch (err) {
-      ctx.deps.logger.error({ err: err?.message ?? String(err), innerKeys: Object.keys(inner), kind, hasMediaKey: !!inner.mediaKey, hasDirectPath: !!inner.directPath, hasUrl: !!inner.url }, 'vv: download failed');
-      throw new UserError(`Failed to download — ${err?.message ?? err}`);
-    }
+    const { buffer, info: cachedInfo, from } = cached;
 
-    // Resolve sender preferring phone-number JID over LID so the caption shows a real number.
-    const fakeKey = {
-      remoteJid: ctx.chatJid,
-      participant: quoted.participant ?? null,
-      participantAlt: quoted.participantAlt ?? null,
-      remoteJidAlt: null,
-    };
-    const senderResolved = resolveSender(fakeKey, { selfJid: client.selfJid });
-    const fromJid = senderResolved.jid || normalizeJid(quoted.participant ?? ctx.chatJid);
-    const isLid = fromJid.endsWith('@lid');
-    let from;
-    if (isLid) {
-      from = ctx.msg?.pushName ?? 'unknown';
-    } else {
-      from = fromJid.split('@')[0];
-    }
-
-    // Always send to owner's DM, never into the chat it was triggered from
     await client.sendMedia(ownerJids[0], {
-      kind,
+      kind: cachedInfo.kind,
       buffer,
-      mimetype,
-      fileName,
+      mimetype: cachedInfo.mimetype,
+      fileName: cachedInfo.fileName,
       caption: `👁️ View-once from ${from}`,
     });
   },
 };
 
-function unwrapInner(message) {
-  const VIEW_ONCE_KEYS = ['viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension'];
-  const MEDIA_KEYS = ['imageMessage', 'videoMessage', 'audioMessage', 'documentMessage'];
-  let content = message;
-  for (let i = 0; i < 5 && content; i++) {
-    const wrapper = VIEW_ONCE_KEYS.find((k) => content[k]);
-    if (wrapper) { content = content[wrapper].message ?? content[wrapper]; continue; }
-    const mediaKey = MEDIA_KEYS.find((k) => content[k]);
-    if (mediaKey) return content[mediaKey];
-    break;
-  }
-  return null;
-}

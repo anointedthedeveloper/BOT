@@ -21,6 +21,12 @@ export class ViewOnceService {
     this.client = client;
     this.logger = logger;
     this.ownerJid = ownerJid;
+    // Cache: msgId -> { buffer, info, from, chatJid }
+    this._cache = new Map();
+  }
+
+  getCache(msgId) {
+    return this._cache.get(msgId) ?? null;
   }
 
   async handle(msg) {
@@ -45,32 +51,21 @@ export class ViewOnceService {
     }
 
     const senderResolved = resolveSender(msg.key, { selfJid: this.client.selfJid });
-    // Prefer phone-number JID over LID so the caption shows a real number.
     const senderJid = senderResolved.jid || normalizeJid(msg.key.participant ?? msg.key.remoteJid);
     const senderNum = senderJid.split('@')[0];
     const isLid = senderJid.endsWith('@lid');
-
-    this.logger.info({
-      remoteJid: msg.key.remoteJid,
-      remoteJidAlt: msg.key.remoteJidAlt ?? '(none)',
-      participant: msg.key.participant ?? '(none)',
-      participantAlt: msg.key.participantAlt ?? '(none)',
-      resolvedJid: senderJid,
-      isLid,
-      pushName: msg.pushName ?? '(none)',
-    }, 'view-once: sender resolution');
-
-    // If we still ended up with a LID and pushName is available, use pushName only
-    // to avoid showing a meaningless internal ID in the caption.
     let from;
-    if (isLid && msg.pushName) {
-      from = msg.pushName;
-    } else if (isLid) {
-      from = `unknown (LID: ${senderNum})`;
-    } else {
-      from = msg.pushName ? `${msg.pushName} (+${senderNum})` : `+${senderNum}`;
-    }
+    if (isLid && msg.pushName) from = msg.pushName;
+    else if (isLid) from = `unknown (LID: ${senderNum})`;
+    else from = msg.pushName ? `${msg.pushName} (+${senderNum})` : `+${senderNum}`;
+
     const chatJid = normalizeJid(msg.key.remoteJid);
+
+    // Cache so ,vv can retrieve it by message ID (quoted messages have stripped media fields)
+    if (msg.key.id) {
+      if (this._cache.size >= 50) this._cache.delete(this._cache.keys().next().value);
+      this._cache.set(msg.key.id, { buffer, info, from, chatJid });
+    }
 
     try {
       await this.client.sendMedia(this.ownerJid, {
