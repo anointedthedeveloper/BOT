@@ -30,7 +30,7 @@ export class ViewOnceService {
   }
 
   async handle(msg) {
-    if (!this.ownerJid || msg.key.fromMe) return;
+    if (!this.ownerJid) return;
 
     const info = describeMessage(msg.message);
     if (!info.viewOnce || !info.hasMedia) return;
